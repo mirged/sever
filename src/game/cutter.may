@@ -1,0 +1,159 @@
+import "../core/types.may";
+import "../core/math.may";
+import "../physics/transforms.may";
+import "../geometry/slice.may" as slice;
+import "../geometry/mass.may" as mass;
+
+pub struct CutBatch {
+    cuts: Int,
+    next_id: Int,
+    budget_reached: Bool
+}
+
+pub struct Cutter {
+    start: Vec2,
+    end: Vec2,
+    trail_ticks: Int,
+    cooldown: Int,
+    cuts: Int,
+    cables: Int,
+    next_id: Int,
+    status: Str
+}
+
+pub fun create_cutter() -> Cutter {
+    return Cutter(Vec2(0.0, 0.0), Vec2(0.0, 0.0), 0, 0, 0, 0, 100, "READY");
+}
+
+fun valid_blade(start: Vec2, end: Vec2) -> Bool {
+    return bounded_number(start.x, 1000.0) and bounded_number(start.y, 1000.0)
+        and bounded_number(end.x, 1000.0) and bounded_number(end.y, 1000.0);
+}
+
+/// Fresh COM-centred fragments inherit their parent's rigid velocity field.
+pub fun split_body(body: Body, start: Vec2, end: Vec2, first_id: Int) -> List<Body> {
+    if (not body.cuttable) { return []; }
+    if (not bounded_motion(body)) { return []; }
+    let result: slice.SliceResult = slice.split_convex(body.shape,
+        local_point(body, start), local_point(body, end), 0.00001);
+    if (result.status != "split") { return []; }
+    let parent: mass.MassProperties = mass.mass_properties(body.shape);
+    let left: mass.MassProperties = mass.mass_properties(result.pieces[0]);
+    let right: mass.MassProperties = mass.mass_properties(result.pieces[1]);
+    // Reject the entire cut, rather than silently deleting small pieces of mass.
+    if (left.area < 0.025 or right.area < 0.025) { return []; }
+    let fragments: List<Body> = [];
+    mut id: Int = first_id;
+    for piece: Polygon in result.pieces {
+        let properties: mass.MassProperties = mass.mass_properties(piece);
+        let offset: Vec2 = rotated(subtract(properties.centroid, parent.centroid), body.angle);
+        let inherited: Vec2 = Vec2(-body.angular_velocity * offset.y,
+            body.angular_velocity * offset.x);
+        push(fragments, Body(id, mass.recentred(piece, properties.centroid),
+            body_point(body, properties.centroid), add(body.velocity, inherited),
+            body.angle, body.angular_velocity, true, true, body.material));
+        id += 1;
+    }
+    return fragments;
+}
+
+/// Each original body is considered once; new fragments wait for the next shot.
+pub fun sever_world(world: World, start: Vec2, end: Vec2, first_id: Int,
+        body_budget: Int) -> CutBatch {
+    if (not valid_blade(start, end)) { return CutBatch(0, first_id, false); }
+    let replacement: List<Body> = [];
+    mut next_id: Int = first_id;
+    for body: Body in world.bodies { next_id = int(max(next_id, body.id + 1)); }
+    mut cuts: Int = 0;
+    mut budget_reached: Bool = false;
+    for body: Body in world.bodies {
+        let fragments: List<Body> = split_body(body, start, end, next_id);
+        if (len(fragments) == 2 and len(world.bodies) + cuts + 1 <= body_budget) {
+            for fragment: Body in fragments { push(replacement, fragment); }
+            for cable: Cable in world.cables {
+                if (cable.attached_body_id == body.id) { cable.intact = false; }
+            }
+            cuts += 1;
+            next_id += 2;
+        } else {
+            push(replacement, body);
+            if (len(fragments) == 2) { budget_reached = true; }
+        }
+    }
+    world.bodies = replacement;
+    return CutBatch(cuts, next_id, budget_reached);
+}
+
+fun cable_hit(start: Vec2, end: Vec2, a: Vec2, b: Vec2) -> Bool {
+    let blade: Vec2 = subtract(end, start);
+    let cable: Vec2 = subtract(b, a);
+    let delta: Vec2 = subtract(a, start);
+    let denominator: Float = cross(blade, cable);
+    let blade_length: Float = float(sqrt(dot(blade, blade)));
+    let cable_length: Float = float(sqrt(dot(cable, cable)));
+    if (blade_length < 0.00001 or cable_length < 0.00001) { return false; }
+    if (abs(denominator) <= 0.00001 * float(max(blade_length, cable_length))) {
+        if (abs(cross(delta, blade)) / blade_length > 0.00001) { return false; }
+        let t0: Float = dot(delta, blade) / dot(blade, blade);
+        let t1: Float = t0 + dot(cable, blade) / dot(blade, blade);
+        return float(max(t0, t1)) >= 0.0 and float(min(t0, t1)) <= 1.0;
+    }
+    let t: Float = cross(delta, cable) / denominator;
+    let u: Float = cross(delta, blade) / denominator;
+    return t >= 0.0 and t <= 1.0 and u >= 0.0 and u <= 1.0;
+}
+
+/// A suspended body releases when its last intact cable is severed.
+pub fun sever_cables(world: World, start: Vec2, end: Vec2) -> Int {
+    if (not valid_blade(start, end)) { return 0; }
+    mut count: Int = 0;
+    for cable: Cable in world.cables {
+        if (cable.intact and cable_hit(start, end, cable.anchor_a, cable.anchor_b)) {
+            cable.intact = false;
+            count += 1;
+        }
+    }
+    for body: Body in world.bodies {
+        mut attached: Bool = false;
+        mut supported: Bool = false;
+        for cable: Cable in world.cables {
+            if (cable.attached_body_id == body.id) {
+                attached = true;
+                if (cable.intact) { supported = true; }
+            }
+        }
+        if (attached and not supported) { body.dynamic = true; }
+    }
+    return count;
+}
+
+pub fun fire_cutter(world: World, cutter: Cutter, start: Vec2, target: Vec2) -> Nil {
+    if (cutter.cooldown > 0) { return; }
+    if (not (bounded_number(start.x, 1000.0) and bounded_number(start.y, 1000.0)
+            and bounded_number(target.x, 1000.0) and bounded_number(target.y, 1000.0))) {
+        cutter.status = "INVALID AIM";
+        return;
+    }
+    let direction: Vec2 = subtract(target, start);
+    let length: Float = float(sqrt(dot(direction, direction)));
+    if (length < 0.001) { cutter.status = "NO AIM"; return; }
+    cutter.start = Vec2(start.x, start.y);
+    cutter.end = add(start, scale(direction, 3.5 / length));
+    cutter.trail_ticks = 9;
+    cutter.cooldown = 12;
+    let cables: Int = sever_cables(world, cutter.start, cutter.end);
+    let result: CutBatch = sever_world(world, cutter.start, cutter.end, cutter.next_id, 24);
+    cutter.next_id = result.next_id;
+    cutter.cuts += result.cuts;
+    cutter.cables += cables;
+    cutter.status = if (result.cuts > 0) { "SEVERED" }
+        else if (cables > 0) { "CABLE CUT" }
+        else if (result.budget_reached) { "DEBRIS LIMIT" } else { "MISS" };
+    return;
+}
+
+pub fun tick_cutter(cutter: Cutter) -> Nil {
+    cutter.cooldown = int(max(0, cutter.cooldown - 1));
+    cutter.trail_ticks = int(max(0, cutter.trail_ticks - 1));
+    return;
+}

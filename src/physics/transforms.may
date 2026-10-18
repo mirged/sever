@@ -33,3 +33,9 @@ pub fun bounded_number(value: Float, limit: Float) -> Bool {
     if (value > limit or value < -limit) { return false; }
     return value <= limit and value >= -limit;
 }
+
+pub fun bounded_motion(body: Body) -> Bool {
+    return bounded_number(body.position.x, 1000.0) and bounded_number(body.position.y, 1000.0)
+        and bounded_number(body.velocity.x, 10000.0) and bounded_number(body.velocity.y, 10000.0)
+        and bounded_number(body.angle, 1000000000.0) and bounded_number(body.angular_velocity, 10000.0);
+}

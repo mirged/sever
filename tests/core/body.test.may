@@ -1,6 +1,6 @@
 import "../../src/core/types.may";
 import "../../src/core/math.may";
-import "../../src/physics/body.may";
+import "../../src/physics/transforms.may";
 import "../../src/game/timing.may";
 
 fun expect_body(value: Bool, label: Str) -> Nil {

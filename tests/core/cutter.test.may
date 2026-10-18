@@ -1,0 +1,102 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/physics/transforms.may";
+import "../../src/physics/material.may";
+import "../../src/geometry/mass.may" as mass;
+import "../../src/game/cutter.may";
+
+mut cutter_checks: Int = 0;
+fun expect_cut(value: Bool, label: Str) -> Nil {
+    if (not value) { fail("FAIL: " + label); }
+    cutter_checks += 1;
+    return;
+}
+
+fun cut_near(a: Float, b: Float) -> Bool {
+    return bounded_number(a, 1.0e100) and bounded_number(b, 1.0e100)
+        and abs(a - b) < 0.000001;
+}
+
+let parent: Body = Body(50, rectangle(4.0, 2.0), Vec2(3.0, -2.0),
+    Vec2(2.0, -1.0), 0.4, 4.0, true, true, "steel");
+let start: Vec2 = body_point(parent, Vec2(0.4, -3.0));
+let end: Vec2 = body_point(parent, Vec2(0.4, 3.0));
+let fragments: List<Body> = split_body(parent, start, end, 100);
+expect_cut(len(fragments) == 2, "rotated body splits");
+mut total_mass: Float = 0.0;
+mut momentum: Vec2 = Vec2(0.0, 0.0);
+mut center: Vec2 = Vec2(0.0, 0.0);
+mut angular: Float = 0.0;
+for fragment: Body in fragments {
+    let properties: mass.MassProperties = mass.mass_properties(fragment.shape);
+    let material_density: Float = density(fragment.material);
+    let weight: Float = material_density * properties.area;
+    total_mass += weight;
+    momentum = add(momentum, scale(fragment.velocity, weight));
+    center = add(center, scale(fragment.position, weight));
+    let offset: Vec2 = subtract(fragment.position, parent.position);
+    angular += material_density * properties.inertia * fragment.angular_velocity
+        + weight * cross(offset, subtract(fragment.velocity, parent.velocity));
+    expect_cut(cut_near(properties.centroid.x, 0.0) and cut_near(properties.centroid.y, 0.0), "fragment local origin is COM");
+    expect_cut(fragment.dynamic and fragment.cuttable and fragment.material == "steel", "fragment physical flags");
+    expect_cut(cut_near(fragment.angle, parent.angle), "preserve body angle");
+    for vertex: Vec2 in fragment.shape.vertices {
+        let local: Vec2 = local_point(parent, body_point(fragment, vertex));
+        expect_cut(local.x >= -2.000001 and local.x <= 2.000001
+            and local.y >= -1.000001 and local.y <= 1.000001, "fragment world geometry stays in parent");
+    }
+}
+expect_cut(cut_near(total_mass, 62.4), "mass conserved");
+expect_cut(cut_near(momentum.x, 124.8) and cut_near(momentum.y, -62.4), "linear momentum conserved");
+expect_cut(cut_near(center.x / total_mass, 3.0) and cut_near(center.y / total_mass, -2.0), "COM conserved");
+expect_cut(cut_near(angular, 416.0), "angular momentum conserved by parallel-axis identity");
+expect_cut(fragments[0].id == 100 and fragments[1].id == 101, "fresh fragment IDs");
+fragments[0].shape.vertices[0].x = 100.0;
+expect_cut(cut_near(parent.shape.vertices[0].x, -2.0), "cut does not mutate parent geometry");
+
+let fixed: Body = Body(51, rectangle(4.0, 2.0), Vec2(0.0, 0.0), Vec2(0.0, 0.0),
+    0.0, 0.0, false, true, "concrete");
+let released: List<Body> = split_body(fixed, Vec2(0.0, -2.0), Vec2(0.0, 2.0), 102);
+expect_cut(len(released) == 2 and released[0].dynamic and released[1].dynamic, "static platform becomes physical fragments");
+expect_cut(len(split_body(fixed, Vec2(-1.9999, -2.0), Vec2(-1.9999, 2.0), 102)) == 0, "reject whole dust-producing cut");
+fixed.cuttable = false;
+expect_cut(len(split_body(fixed, Vec2(0.0, -2.0), Vec2(0.0, 2.0), 102)) == 0, "protected body is preserved");
+fixed.cuttable = true;
+let world: World = World([fixed], [], Vec2(0.0, -24.0), 0);
+let refused: CutBatch = sever_world(world, Vec2(0.0, -2.0), Vec2(0.0, 2.0), 100, 1);
+expect_cut(refused.cuts == 0 and refused.budget_reached and len(world.bodies) == 1, "body budget rejects without deleting mass");
+let first: CutBatch = sever_world(world, Vec2(0.0, -2.0), Vec2(0.0, 2.0), 100, 24);
+expect_cut(first.cuts == 1 and len(world.bodies) == 2, "one body considered once per strike");
+let second: CutBatch = sever_world(world, Vec2(-3.0, 0.0), Vec2(3.0, 0.0), first.next_id, 24);
+expect_cut(second.cuts == 2 and len(world.bodies) == 4, "fragments can be cut again");
+for i: Int in 0..len(world.bodies) {
+    for j: Int in (i + 1)..len(world.bodies) {
+        expect_cut(world.bodies[i].id != world.bodies[j].id, "IDs remain unique after recutting");
+    }
+}
+
+let suspended: Body = Body(60, rectangle(2.0, 0.5), Vec2(0.0, 2.0),
+    Vec2(0.0, 0.0), 0.0, 0.0, false, true, "steel");
+let rig: World = World([suspended], [
+    Cable(1, Vec2(-1.0, 4.0), Vec2(-1.0, 2.0), 60, true),
+    Cable(2, Vec2(1.0, 4.0), Vec2(1.0, 2.0), 60, true)
+], Vec2(0.0, -24.0), 0);
+expect_cut(sever_cables(rig, Vec2(-2.0, 4.1), Vec2(2.0, 4.1)) == 0, "finite cable miss");
+expect_cut(sever_cables(rig, Vec2(-2.0, 3.0), Vec2(0.0, 3.0)) == 1, "first cable cut");
+expect_cut(not suspended.dynamic, "remaining cable holds the slab");
+expect_cut(sever_cables(rig, Vec2(0.0, 3.0), Vec2(2.0, 3.0)) == 1 and suspended.dynamic, "last cable releases the slab");
+expect_cut(sever_cables(rig, Vec2(-2.0, 3.0), Vec2(2.0, 3.0)) == 0, "already severed cables do not recount");
+
+let cutter: Cutter = create_cutter();
+let empty: World = World([], [], Vec2(0.0, 0.0), 0);
+fire_cutter(empty, cutter, Vec2(0.0, 0.0), Vec2(0.0, 100.0));
+expect_cut(cut_near(cutter.end.y, 3.5), "finite weapon reach");
+fire_cutter(empty, cutter, Vec2(0.0, 0.0), Vec2(100.0, 0.0));
+expect_cut(cut_near(cutter.end.y, 3.5) and cutter.cooldown == 12, "cooldown prevents duplicate shots");
+for tick: Int in 0..12 { tick_cutter(cutter); }
+expect_cut(cutter.cooldown == 0 and cutter.trail_ticks == 0, "simulation-time cooldown and trail");
+let huge: Float = 1.0e300;
+let infinity: Float = huge * huge;
+fire_cutter(empty, cutter, Vec2(0.0, 0.0), Vec2(infinity - infinity, 0.0));
+expect_cut(cutter.status == "INVALID AIM" and cutter.cooldown == 0, "reject non-finite aiming");
+print("PASS: " + str(cutter_checks) + " cutter and fragment-conservation checks");

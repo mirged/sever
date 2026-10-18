@@ -1,5 +1,5 @@
 import "../core/types.may";
-import "../physics/body.may";
+import "../physics/transforms.may";
 
 pub struct Camera {
     x: Int,

@@ -1,0 +1,6 @@
+/// Relative uniform density; fragments retain the parent's material.
+pub fun density(material: Str) -> Float {
+    if (material == "steel") { return 7.8; }
+    if (material == "wood") { return 0.7; }
+    return 2.4;
+}
