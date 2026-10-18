@@ -71,4 +71,31 @@ expect_training(advance_clock(timer, 2.0, false) == 8, "bounded catch-up");
 expect_training(timer.dropped_seconds > 1.8, "record discarded pause time");
 expect_training(advance_clock(timer, 100.0, true) == 0 and training_near(timer.remainder, 0.0), "pause clears backlog");
 expect_training(advance_clock(timer, 1.0 / 60.0, false) == 1, "resume without a time jump");
-print("PASS: 23 training and timing checks");
+let cutting: Training = create_training();
+mut removed_slab: Bool = false;
+mut saw_fragments: Bool = false;
+mut released_supports: Bool = false;
+for tick: Int in 0..600 {
+    demo_cut(cutting);
+    if (cutting.cutter.cuts > 0 and not removed_slab) {
+        removed_slab = true;
+        mut fragments: Int = 0;
+        for piece: Body in cutting.world.bodies {
+            expect_training(piece.id != 16, "cut replaces the original suspended slab");
+            if (piece.dynamic) { fragments += 1; }
+        }
+        saw_fragments = fragments == 2;
+        released_supports = not cutting.world.cables[0].intact and not cutting.world.cables[1].intact;
+    }
+    step_training(cutting, demo_controls(cutting));
+}
+expect_training(removed_slab and cutting.cutter.cuts == 1, "native demo path performs exactly one cut");
+expect_training(saw_fragments, "cut produces two dynamic fragments before cleanup");
+expect_training(released_supports, "cut slab detaches both supports");
+expect_training(cutting.player.finished, "cutting demo can recover and reach the exit");
+expect_training(cutting.player.deaths == 1, "falling slab causes the expected single respawn");
+let restored: Training = create_training();
+expect_training(restored.cutter.cuts == 0 and len(restored.world.bodies) == 7
+    and restored.world.cables[0].intact and restored.world.cables[1].intact,
+    "reset reconstructs intact world and cutter state");
+print("PASS: 37 training and timing checks");

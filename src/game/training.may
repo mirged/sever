@@ -1,6 +1,9 @@
 import "../core/types.may";
 import "../core/math.may";
 import "../physics/step.may";
+import "../physics/rigid.may";
+import "../physics/transforms.may";
+import "cutter.may";
 
 pub struct Player {
     position: Vec2,
@@ -17,30 +20,10 @@ pub struct Controls {
 
 pub struct Training {
     world: World,
-    player: Player
-}
-
-/// The movement lab currently uses axis-aligned static rectangles only.
-pub struct PlatformBounds {
-    left: Float,
-    right: Float,
-    bottom: Float,
-    top: Float
-}
-
-pub fun bounds(body: Body) -> PlatformBounds {
-    mut left: Float = body.shape.vertices[0].x;
-    mut right: Float = left;
-    mut bottom: Float = body.shape.vertices[0].y;
-    mut top: Float = bottom;
-    for vertex: Vec2 in body.shape.vertices {
-        left = float(min(left, vertex.x));
-        right = float(max(right, vertex.x));
-        bottom = float(min(bottom, vertex.y));
-        top = float(max(top, vertex.y));
-    }
-    return PlatformBounds(left + body.position.x, right + body.position.x,
-        bottom + body.position.y, top + body.position.y);
+    player: Player,
+    player_shape: Polygon,
+    cutter: Cutter,
+    aim: Vec2
 }
 
 fun platform(id: Int, x: Float, top: Float, width: Float, height: Float) -> Body {
@@ -62,55 +45,21 @@ pub fun create_training() -> Training {
         Cable(10, Vec2(-1.0, 8.0), Vec2(-1.0, 6.2), 16, true),
         Cable(11, Vec2(3.0, 8.0), Vec2(3.0, 6.2), 16, true)
     ];
+    bodies[0].cuttable = false;
+    bodies[0].material = "bedrock";
+    bodies[1].cuttable = false;
+    bodies[1].material = "bedrock";
+    bodies[6].material = "steel";
     return Training(World(bodies, cables, Vec2(0.0, -24.0), 0),
-        Player(Vec2(-6.0, 0.65), Vec2(0.0, 0.0), true, false, 0));
-}
-
-fun overlaps(a0: Float, a1: Float, b0: Float, b1: Float) -> Bool {
-    return a0 < b1 - 0.000001 and a1 > b0 + 0.000001;
-}
-
-fun move_horizontal(player: Player, body: Body, previous_x: Float) -> Nil {
-    let box: PlatformBounds = bounds(body);
-    if (not overlaps(player.position.y - 0.65, player.position.y + 0.65,
-            box.bottom, box.top)) {
-        return;
-    }
-    if (player.velocity.x > 0.0 and previous_x + 0.3 <= box.left + 0.000001
-            and player.position.x + 0.3 > box.left) {
-        player.position.x = box.left - 0.3;
-        player.velocity.x = 0.0;
-    } else if (player.velocity.x < 0.0 and previous_x - 0.3 >= box.right - 0.000001
-            and player.position.x - 0.3 < box.right) {
-        player.position.x = box.right + 0.3;
-        player.velocity.x = 0.0;
-    }
-    return;
-}
-
-fun move_vertical(player: Player, body: Body, previous_y: Float) -> Nil {
-    let box: PlatformBounds = bounds(body);
-    if (not overlaps(player.position.x - 0.3, player.position.x + 0.3,
-            box.left, box.right)) {
-        return;
-    }
-    if (player.velocity.y < 0.0 and previous_y - 0.65 >= box.top - 0.000001
-            and player.position.y - 0.65 < box.top) {
-        player.position.y = box.top + 0.65;
-        player.velocity.y = 0.0;
-        player.grounded = true;
-    } else if (player.velocity.y > 0.0 and previous_y + 0.65 <= box.bottom + 0.000001
-            and player.position.y + 0.65 > box.bottom) {
-        player.position.y = box.bottom - 0.65;
-        player.velocity.y = 0.0;
-    }
-    return;
+        Player(Vec2(-6.0, 0.65), Vec2(0.0, 0.0), true, false, 0),
+        rectangle(0.6, 1.3), create_cutter(), Vec2(1.0, 0.0));
 }
 
 /// One fixed tick, with four contact substeps and no variable timestep input.
 pub fun step_training(training: Training, input: Controls) -> Nil {
     let player: Player = training.player;
     training.world.tick += 1;
+    tick_cutter(training.cutter);
     if (player.finished) {
         return;
     }
@@ -120,24 +69,16 @@ pub fun step_training(training: Training, input: Controls) -> Nil {
         player.grounded = false;
     }
     let dt: Float = fixed_dt() * 0.25;
+    let character: Body = Body(-1, training.player_shape, player.position,
+        player.velocity, 0.0, 0.0, false, false, "character");
     for substep: Int in 0..4 {
-        let previous_x: Float = player.position.x;
-        player.position.x += player.velocity.x * dt;
-        for body: Body in training.world.bodies {
-            if (not body.dynamic) {
-                move_horizontal(player, body, previous_x);
-            }
-        }
-        let previous_y: Float = player.position.y;
+        let proxies: List<RigidProxy> = step_rigid_world(training.world, dt);
         player.velocity.y = float(max(-20.0, player.velocity.y + training.world.gravity.y * dt));
+        player.position.x += player.velocity.x * dt;
         player.position.y += player.velocity.y * dt;
-        player.grounded = false;
-        for body: Body in training.world.bodies {
-            if (not body.dynamic) {
-                move_vertical(player, body, previous_y);
-            }
-        }
+        player.grounded = resolve_character(character, proxies);
     }
+    retire_debris(training.world);
     if (player.position.y < -5.0 or player.position.x < -11.0 or player.position.x > 17.0) {
         player.position = Vec2(-6.0, 0.65);
         player.velocity = Vec2(0.0, 0.0);
@@ -148,6 +89,31 @@ pub fun step_training(training: Training, input: Controls) -> Nil {
             and player.position.y > 3.8 and player.position.y < 5.8) {
         player.finished = true;
         player.velocity = Vec2(0.0, 0.0);
+    }
+    return;
+}
+
+pub fun aim_training(training: Training, target: Vec2) -> Nil {
+    if (not (bounded_number(target.x, 1000.0) and bounded_number(target.y, 1000.0))) { return; }
+    let direction: Vec2 = subtract(target, training.player.position);
+    let length: Float = float(sqrt(dot(direction, direction)));
+    if (length > 0.001) { training.aim = scale(direction, 1.0 / length); }
+    return;
+}
+
+pub fun cut_training(training: Training) -> Nil {
+    if (not training.player.finished) {
+        fire_cutter(training.world, training.cutter, training.player.position,
+            add(training.player.position, scale(training.aim, 3.5)));
+    }
+    return;
+}
+
+pub fun demo_cut(training: Training) -> Nil {
+    if (training.cutter.cuts == 0 and training.player.position.x > 0.5
+            and training.player.position.x < 2.5 and training.player.position.y > 2.5) {
+        training.aim = Vec2(0.0, 1.0);
+        cut_training(training);
     }
     return;
 }

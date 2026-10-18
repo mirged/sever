@@ -82,7 +82,7 @@ pub fun draw_scene(window: ui.Window, training: Training, paused: Bool) -> Nil {
     mui_text(294, 42, "EXPERIMENT 001", 14, lime);
     mui_text(294, 66, "THE WORKSHOP", 22, text);
     mui_text(window.width - 240, 44, "PHYSICS / PLATFORMER", 12, muted);
-    mui_text(window.width - 240, 68, "MOVEMENT LAB   v0.1", 12, muted);
+    mui_text(window.width - 240, 68, "CUTTING LAB    v0.2", 12, muted);
     mui_line(32, 128, window.width - 32, 128, 1, rgb(58, 70, 71), 255);
     mui_text(32, 174, "01 / THE CROSSING", 13, lime);
     mui_text(32, 213, "Make your", 23, text);
@@ -90,25 +90,40 @@ pub fun draw_scene(window: ui.Window, training: Training, paused: Bool) -> Nil {
     mui_text(32, 302, "Climb the platforms.", 12, muted);
     mui_text(32, 324, "Reach the lit exit.", 12, muted);
     mui_line(32, 370, 220, 370, 1, rgb(58, 70, 71), 255);
-    mui_text(32, 398, "CUTTER / OFFLINE", 12, orange);
-    mui_text(32, 424, "Movement comes first.", 11, muted);
-    mui_text(32, 444, "Cutting arrives next.", 11, muted);
+    mui_text(32, 398, "CUTTER / " + training.cutter.status, 12, orange);
+    mui_text(32, 424, "Mouse aims. J severs.", 11, muted);
+    mui_text(32, 444, "3.5 m / finite blade", 11, muted);
+    mui_text(32, 468, "Dark foundations hold.", 10, muted);
     mui_text(32, 512, "ATTEMPTS", 11, muted);
     mui_text(32, 534, str(training.player.deaths + 1), 28, text);
-    mui_text(128, 512, "TICKS", 11, muted);
-    mui_text(128, 534, str(training.world.tick), 28, text);
+    mui_text(128, 512, "CUTS", 11, muted);
+    mui_text(128, 534, str(training.cutter.cuts), 28, text);
     mui_clip(camera.x, camera.y, camera.width, camera.height);
     mui_rect(camera.x, camera.y, camera.width, camera.height, 0, rgb(22, 29, 31));
     grid(camera);
     for cable: Cable in training.world.cables {
         if (cable.intact) {
             line(to_screen(camera, cable.anchor_a), to_screen(camera, cable.anchor_b), 2, muted);
+        } else {
+            line(to_screen(camera, cable.anchor_a),
+                to_screen(camera, Vec2(cable.anchor_a.x, cable.anchor_a.y - 0.25)), 2, orange);
         }
     }
     for body: Body in training.world.bodies {
         paint_polygon(camera, project_body(camera, body),
-            if (body.id == 16) { rgb(67, 74, 57) } else { rgb(49, 61, 63) },
-            if (body.id == 16) { rgb(171, 189, 127) } else { rgb(113, 136, 135) });
+            if (body.dynamic) { rgb(81, 59, 43) }
+                else if (body.material == "bedrock") { rgb(32, 40, 42) }
+                else if (body.id == 16) { rgb(67, 74, 57) } else { rgb(49, 61, 63) },
+            if (body.dynamic) { orange }
+                else if (body.id == 16) { rgb(171, 189, 127) } else { rgb(113, 136, 135) });
+    }
+    let aim_start: Vec2 = to_screen(camera, training.player.position);
+    let aim_end: Vec2 = to_screen(camera, Vec2(training.player.position.x + training.aim.x * 3.5,
+        training.player.position.y + training.aim.y * 3.5));
+    mui_line(int(aim_start.x), int(aim_start.y), int(aim_end.x), int(aim_end.y), 1, lime, 65);
+    mui_rect(int(aim_end.x) - 2, int(aim_end.y) - 2, 4, 4, 2, lime);
+    if (training.cutter.trail_ticks > 0) {
+        line(to_screen(camera, training.cutter.start), to_screen(camera, training.cutter.end), 3, orange);
     }
     let door: Vec2 = to_screen(camera, Vec2(10.95, 5.65));
     let door_width: Int = int(camera.pixels_per_unit * 1.15);
@@ -132,7 +147,7 @@ pub fun draw_scene(window: ui.Window, training: Training, paused: Bool) -> Nil {
         mui_text(camera.x + 44, camera.y + 72, "R / restart the workshop", 11, muted);
     }
     mui_line(32, window.height - 73, window.width - 32, window.height - 73, 1, rgb(58, 70, 71), 255);
-    mui_text(32, window.height - 48, "A / D  MOVE     SPACE  JUMP     P  PAUSE     R  RESET", 13, text);
+    mui_text(32, window.height - 48, "A / D  MOVE    SPACE  JUMP    MOUSE / J  CUT    P  PAUSE    R  RESET", 13, text);
     mui_text(window.width - 244, window.height - 48, "NOTHING STAYS WHOLE.", 12, lime);
     if (window.headless) {
         if (mui_software_present() == 0) { fail("Cannot render workshop preview"); }

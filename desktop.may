@@ -1,12 +1,15 @@
 import "ui" as ui;
+import "src/core/types.may";
 import "src/game/training.may";
 import "src/game/timing.may";
 import "src/render/canvas.may" as canvas;
+import "src/render/projection.may" as projection;
 
 fun run_workshop() -> Nil {
     let argv: List<Str> = args();
     mut headless: Bool = false;
     mut demo: Bool = false;
+    mut cut_demo: Bool = false;
     mut limit: Int = 0;
     mut snapshot: Str = "";
     mut report: Str = "";
@@ -14,10 +17,11 @@ fun run_workshop() -> Nil {
     while (index < len(argv)) {
         let option: Str = argv[index];
         if (option == "--help") {
-            print("sever / movement lab\nA/D or arrows: move. Space/W/Up: jump. P: pause. R: reset. Esc: close.\nOptions: --headless --demo --ticks 1..100000 --snapshot PATH --report PATH\nCutting is not available in this movement milestone.");
+            print("sever / cutting lab\nA/D or arrows: move. Space/W/Up: jump. Mouse: aim. J: sever. P: pause. R: reset. Esc: close.\nOptions: --headless --demo --cut-demo --ticks 1..100000 --snapshot PATH --report PATH\nCut platforms or cables. Dark foundation blocks are protected. Reset restores the room.");
             return;
         } else if (option == "--headless") { headless = true; }
         else if (option == "--demo") { demo = true; }
+        else if (option == "--cut-demo") { demo = true; cut_demo = true; }
         else if ((option == "--ticks" or option == "--snapshot" or option == "--report")
                 and index + 1 < len(argv)) {
             index += 1;
@@ -43,6 +47,7 @@ fun run_workshop() -> Nil {
     may {
         if (headless) {
             for tick: Int in 0..limit {
+                if (cut_demo) { demo_cut(training); }
                 step_training(training, if (demo) { demo_controls(training) } else { Controls(0, false) });
             }
             canvas.draw_scene(window, training, false);
@@ -61,6 +66,7 @@ fun run_workshop() -> Nil {
                 let space: Bool = ui.key_pressed(window, 32);
                 let up: Bool = ui.key_pressed(window, 265);
                 let w: Bool = ui.key_pressed(window, 87);
+                let sever: Bool = ui.key_pressed(window, 74);
                 if (focused and reset) {
                     training = create_training();
                     timer = create_clock();
@@ -69,6 +75,13 @@ fun run_workshop() -> Nil {
                 }
                 if (focused and toggle_pause) { paused = not paused; }
                 if (focused and (space or up or w)) { jump_queued = true; }
+                let camera: projection.Camera = projection.room_camera(window.width, window.height);
+                if (focused and window.mouse_x >= camera.x and window.mouse_x < camera.x + camera.width
+                        and window.mouse_y >= camera.y and window.mouse_y < camera.y + camera.height) {
+                    aim_training(training, projection.to_world(camera,
+                        Vec2(float(window.mouse_x), float(window.mouse_y))));
+                }
+                if (focused and not paused and sever) { cut_training(training); }
                 let now: Float = float(clock());
                 let ticks: Int = advance_clock(timer, now - previous, paused or not focused);
                 previous = now;
@@ -77,6 +90,7 @@ fun run_workshop() -> Nil {
                 if (ui.key_down(window, 65) or ui.key_down(window, 263)) { direction -= 1; }
                 if (ui.key_down(window, 68) or ui.key_down(window, 262)) { direction += 1; }
                 for tick: Int in 0..ticks {
+                    if (cut_demo) { demo_cut(training); }
                     step_training(training, if (demo) { demo_controls(training) }
                         else { Controls(direction, jump_queued) });
                     jump_queued = false;
@@ -92,11 +106,18 @@ fun run_workshop() -> Nil {
         }
         if (snapshot != "") { ui.snapshot(window, snapshot); }
         if (report != "") {
+            mut dynamic_bodies: Int = 0;
+            for body: Body in training.world.bodies {
+                if (body.dynamic) { dynamic_bodies += 1; }
+            }
             write_file(report, json_stringify({"ticks": training.world.tick,
                 "finished": training.player.finished, "deaths": training.player.deaths,
                 "x": training.player.position.x, "y": training.player.position.y,
                 "renderer": ui.renderer(window), "dropped_seconds": timer.dropped_seconds,
-                "frames": rendered_frames, "wall_seconds": float(clock()) - started}) + "\n");
+                "frames": rendered_frames, "wall_seconds": float(clock()) - started,
+                "cuts": training.cutter.cuts, "cables_cut": training.cutter.cables,
+                "cut_status": training.cutter.status, "bodies": len(training.world.bodies),
+                "dynamic_bodies": dynamic_bodies}) + "\n");
         }
         ui.close(window);
     } otherwise {

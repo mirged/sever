@@ -99,4 +99,27 @@ let huge: Float = 1.0e300;
 let infinity: Float = huge * huge;
 fire_cutter(empty, cutter, Vec2(0.0, 0.0), Vec2(infinity - infinity, 0.0));
 expect_cut(cutter.status == "INVALID AIM" and cutter.cooldown == 0, "reject non-finite aiming");
+
+let off_center: Body = Body(70, Polygon([Vec2(0.0, 0.0), Vec2(4.0, 0.0), Vec2(0.0, 4.0)]),
+    Vec2(7.0, 1.0), Vec2(3.0, 2.0), 0.6, 2.0, true, true, "wood");
+let original_properties: mass.MassProperties = mass.mass_properties(off_center.shape);
+let original_center: Vec2 = body_point(off_center, original_properties.centroid);
+let triangle_pieces: List<Body> = split_body(off_center,
+    body_point(off_center, Vec2(0.5, -1.0)), body_point(off_center, Vec2(0.5, 5.0)), 200);
+expect_cut(len(triangle_pieces) == 2, "non-centred local shape splits");
+mut triangle_momentum: Vec2 = Vec2(0.0, 0.0);
+mut triangle_angular: Float = 0.0;
+for piece: Body in triangle_pieces {
+    let properties: mass.MassProperties = mass.mass_properties(piece.shape);
+    let weight: Float = density("wood") * properties.area;
+    triangle_momentum = add(triangle_momentum, scale(piece.velocity, weight));
+    triangle_angular += density("wood") * properties.inertia * piece.angular_velocity
+        + weight * cross(subtract(piece.position, original_center), subtract(piece.velocity, off_center.velocity));
+}
+expect_cut(cut_near(triangle_momentum.x, 16.8) and cut_near(triangle_momentum.y, 11.2),
+    "rigid velocity field is measured from COM, not arbitrary local origin");
+expect_cut(cut_near(triangle_angular, density("wood") * original_properties.inertia * 2.0),
+    "angular momentum about non-centred parent COM is conserved");
+expect_cut(sever_cables(rig, Vec2(infinity - infinity, 0.0), Vec2(0.0, 0.0)) == 0,
+    "NaN blade cannot sever a cable through unordered comparisons");
 print("PASS: " + str(cutter_checks) + " cutter and fragment-conservation checks");

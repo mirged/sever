@@ -1,0 +1,85 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/physics/transforms.may";
+import "../../src/physics/rigid.may";
+import "../../src/geometry/mass.may" as mass;
+
+mut rigid_checks: Int = 0;
+fun expect_rigid(value: Bool, label: Str) -> Nil {
+    if (not value) { fail("FAIL: " + label); }
+    rigid_checks += 1;
+    return;
+}
+
+fun block(id: Int, x: Float, y: Float, width: Float, height: Float, dynamic: Bool) -> Body {
+    return Body(id, rectangle(width, height), Vec2(x, y), Vec2(0.0, 0.0),
+        0.0, 0.0, dynamic, dynamic, "wood");
+}
+
+let floor: Body = block(1, 0.0, -0.5, 20.0, 1.0, false);
+let falling: Body = block(2, 0.0, 3.0, 1.0, 1.0, true);
+let drop: World = World([floor, falling], [], Vec2(0.0, -24.0), 0);
+for tick: Int in 0..600 { step_rigid_world(drop, 1.0 / 240.0); }
+expect_rigid(bounded_motion(falling), "drop result is finite before approximate comparisons");
+expect_rigid(abs(falling.position.y - 0.5) < 0.005, "falling body comes to rest on foundation");
+expect_rigid(abs(falling.velocity.y) < 0.05, "resting contact cancels gravity velocity");
+expect_rigid(floor.position.y == -0.5, "static body never receives positional correction");
+
+let left: Body = block(3, -0.6, 0.0, 1.0, 1.0, true);
+let right: Body = block(4, 0.6, 0.0, 1.0, 1.0, true);
+left.velocity.x = 2.0; right.velocity.x = -2.0;
+let impact: World = World([left, right], [], Vec2(0.0, 0.0), 0);
+for tick: Int in 0..120 { step_rigid_world(impact, 1.0 / 240.0); }
+expect_rigid(bounded_motion(left) and bounded_motion(right), "impact results stay finite");
+expect_rigid(abs(left.velocity.x + right.velocity.x) < 0.000001, "equal and opposite contact impulses conserve linear momentum");
+expect_rigid(left.position.x < right.position.x - 0.99, "boxes do not pass through each other");
+expect_rigid(abs(left.velocity.x) <= 2.0 and abs(right.velocity.x) <= 2.0, "inelastic impact does not create speed");
+
+let tilted: Body = block(5, 0.0, 2.0, 1.5, 0.6, true);
+tilted.angle = 0.3;
+let tipping: World = World([floor, tilted], [], Vec2(0.0, -24.0), 0);
+for tick: Int in 0..600 { step_rigid_world(tipping, 1.0 / 240.0); }
+expect_rigid(bounded_motion(tilted), "tilted result stays finite");
+expect_rigid(bounded_number(tilted.angle, 4.0) and bounded_number(tilted.velocity.y, 21.0), "rotated contact state stays finite");
+for vertex: Vec2 in world_polygon(tilted).vertices {
+    expect_rigid(vertex.y > -0.02, "rotated polygon rests above actual floor");
+}
+expect_rigid(abs(tilted.angle - 0.3) > 0.01, "contact lever arm changes angular motion");
+
+let slope: Body = Body(6, Polygon([Vec2(-2.0, 0.0), Vec2(2.0, 0.0), Vec2(2.0, 2.0)]),
+    Vec2(0.0, 0.0), Vec2(0.0, 0.0), 0.0, 0.0, false, true, "concrete");
+let ramp: World = World([slope], [], Vec2(0.0, -24.0), 0);
+let character: Body = block(7, -1.0, 3.0, 0.6, 1.3, false);
+mut grounded: Bool = false;
+for tick: Int in 0..120 {
+    character.velocity.y += -24.0 / 240.0;
+    character.position.x += character.velocity.x / 240.0;
+    character.position.y += character.velocity.y / 240.0;
+    grounded = resolve_character(character, step_rigid_world(ramp, 1.0 / 240.0));
+}
+expect_rigid(bounded_motion(character), "character contact result stays finite");
+expect_rigid(grounded, "convex slope supports the upright character");
+expect_rigid(character.position.y > 1.0 and character.position.y < 1.7,
+    "character stands on the triangle face, not its bounding box");
+
+let escaped: Body = block(8, 41.0, 0.0, 1.0, 1.0, true);
+let cleanup: World = World([floor, escaped], [], Vec2(0.0, 0.0), 0);
+retire_debris(cleanup);
+expect_rigid(len(cleanup.bodies) == 1 and cleanup.bodies[0].id == floor.id,
+    "off-room debris is retired without deleting static terrain");
+mut rejected: Bool = false;
+may { step_rigid_world(drop, 1.0); } otherwise { rejected = true; }
+expect_rigid(rejected, "reject unsafe variable timesteps");
+
+let spinning: Body = Body(9, Polygon([Vec2(0.0, 0.0), Vec2(4.0, 0.0), Vec2(0.0, 4.0)]),
+    Vec2(7.0, 1.0), Vec2(3.0, 2.0), 0.6, 2.0, true, true, "wood");
+let local_center: Vec2 = mass.mass_properties(spinning.shape).centroid;
+let initial_center: Vec2 = body_point(spinning, local_center);
+let free_spin: World = World([spinning], [], Vec2(0.0, 0.0), 0);
+for tick: Int in 0..120 { step_rigid_world(free_spin, 1.0 / 240.0); }
+let final_center: Vec2 = body_point(spinning, local_center);
+expect_rigid(bounded_motion(spinning), "off-centre spinning state is finite");
+expect_rigid(abs(final_center.x - initial_center.x - 1.5) < 0.000001
+        and abs(final_center.y - initial_center.y - 1.0) < 0.000001,
+    "integrate COM while rotating an arbitrary local origin");
+print("PASS: " + str(rigid_checks) + " rigid-body and convex-character checks");

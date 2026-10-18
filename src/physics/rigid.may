@@ -1,0 +1,205 @@
+import "../core/types.may";
+import "../core/math.may";
+import "transforms.may";
+import "material.may";
+import "../geometry/mass.may" as mass;
+import "../geometry/contact.may" as contact;
+
+pub struct RigidProxy {
+    body: Body,
+    polygon: Polygon,
+    center: Vec2,
+    local_center: Vec2,
+    inverse_mass: Float,
+    inverse_inertia: Float,
+    left: Float,
+    right: Float,
+    bottom: Float,
+    top: Float
+}
+
+fun refresh(proxy: RigidProxy) -> Nil {
+    let body: Body = proxy.body;
+    let cosine: Float = float(cos(body.angle));
+    let sine: Float = float(sin(body.angle));
+    for i: Int in 0..len(body.shape.vertices) {
+        let source: Vec2 = body.shape.vertices[i];
+        let point: Vec2 = proxy.polygon.vertices[i];
+        point.x = body.position.x + source.x * cosine - source.y * sine;
+        point.y = body.position.y + source.x * sine + source.y * cosine;
+        if (i == 0) {
+            proxy.left = point.x; proxy.right = point.x;
+            proxy.bottom = point.y; proxy.top = point.y;
+        } else {
+            proxy.left = float(min(proxy.left, point.x));
+            proxy.right = float(max(proxy.right, point.x));
+            proxy.bottom = float(min(proxy.bottom, point.y));
+            proxy.top = float(max(proxy.top, point.y));
+        }
+    }
+    proxy.center.x = body.position.x + proxy.local_center.x * cosine - proxy.local_center.y * sine;
+    proxy.center.y = body.position.y + proxy.local_center.x * sine + proxy.local_center.y * cosine;
+    return;
+}
+
+pub fun make_proxy(body: Body) -> RigidProxy {
+    mut center: Vec2 = Vec2(0.0, 0.0);
+    mut inverse_mass: Float = 0.0;
+    mut inverse_inertia: Float = 0.0;
+    if (body.dynamic) {
+        let properties: mass.MassProperties = mass.mass_properties(body.shape);
+        let material_density: Float = density(body.material);
+        center = properties.centroid;
+        inverse_mass = 1.0 / (material_density * properties.area);
+        inverse_inertia = 1.0 / (material_density * properties.inertia);
+    }
+    let proxy: RigidProxy = RigidProxy(body, world_polygon(body),
+        body_point(body, center), center, inverse_mass, inverse_inertia,
+        0.0, 0.0, 0.0, 0.0);
+    refresh(proxy);
+    return proxy;
+}
+
+pub fun proxies_overlap(a: RigidProxy, b: RigidProxy) -> Bool {
+    return a.left < b.right and a.right > b.left and a.bottom < b.top and a.top > b.bottom;
+}
+
+fun translate(proxy: RigidProxy, x: Float, y: Float) -> Nil {
+    proxy.body.position.x += x; proxy.body.position.y += y;
+    proxy.center.x += x; proxy.center.y += y;
+    proxy.left += x; proxy.right += x; proxy.bottom += y; proxy.top += y;
+    for point: Vec2 in proxy.polygon.vertices { point.x += x; point.y += y; }
+    return;
+}
+
+pub fun point_velocity(proxy: RigidProxy, point: Vec2) -> Vec2 {
+    if (not proxy.body.dynamic) { return Vec2(0.0, 0.0); }
+    return Vec2(proxy.body.velocity.x - proxy.body.angular_velocity * (point.y - proxy.center.y),
+        proxy.body.velocity.y + proxy.body.angular_velocity * (point.x - proxy.center.x));
+}
+
+fun impulse(proxy: RigidProxy, value: Vec2, point: Vec2) -> Nil {
+    if (proxy.inverse_mass == 0.0) { return; }
+    proxy.body.velocity.x += value.x * proxy.inverse_mass;
+    proxy.body.velocity.y += value.y * proxy.inverse_mass;
+    proxy.body.angular_velocity += cross(subtract(point, proxy.center), value) * proxy.inverse_inertia;
+    return;
+}
+
+fun denominator(a: RigidProxy, b: RigidProxy, point: Vec2, axis: Vec2) -> Float {
+    let arm_a: Float = cross(subtract(point, a.center), axis);
+    let arm_b: Float = cross(subtract(point, b.center), axis);
+    return a.inverse_mass + b.inverse_mass
+        + arm_a * arm_a * a.inverse_inertia + arm_b * arm_b * b.inverse_inertia;
+}
+
+fun resolve(a: RigidProxy, b: RigidProxy, result: contact.ContactResult) -> Nil {
+    let inverse_sum: Float = a.inverse_mass + b.inverse_mass;
+    if (inverse_sum <= 0.0) { return; }
+    let correction: Float = float(max(0.0, result.depth - 0.000001)) * 0.85 / inverse_sum;
+    translate(a, result.normal.x * correction * a.inverse_mass,
+        result.normal.y * correction * a.inverse_mass);
+    translate(b, -result.normal.x * correction * b.inverse_mass,
+        -result.normal.y * correction * b.inverse_mass);
+    let relative: Vec2 = subtract(point_velocity(a, result.point), point_velocity(b, result.point));
+    let closing: Float = dot(relative, result.normal);
+    if (closing >= 0.0) { return; }
+    let divisor: Float = denominator(a, b, result.point, result.normal);
+    if (divisor <= 0.000000001) { return; }
+    let restitution: Float = if (closing < -1.0) { 0.05 } else { 0.0 };
+    let magnitude: Float = -(1.0 + restitution) * closing / divisor;
+    let normal_impulse: Vec2 = scale(result.normal, magnitude);
+    impulse(a, normal_impulse, result.point);
+    impulse(b, scale(normal_impulse, -1.0), result.point);
+    let after: Vec2 = subtract(point_velocity(a, result.point), point_velocity(b, result.point));
+    let tangent: Vec2 = subtract(after, scale(result.normal, dot(after, result.normal)));
+    let tangent_length: Float = float(sqrt(dot(tangent, tangent)));
+    if (tangent_length > 0.00000001) {
+        let axis: Vec2 = scale(tangent, 1.0 / tangent_length);
+        let friction_divisor: Float = denominator(a, b, result.point, axis);
+        if (friction_divisor <= 0.000000001) { return; }
+        let friction: Float = float(max(-0.55 * magnitude,
+            min(0.55 * magnitude, -dot(after, axis) / friction_divisor)));
+        let friction_impulse: Vec2 = scale(axis, friction);
+        impulse(a, friction_impulse, result.point);
+        impulse(b, scale(friction_impulse, -1.0), result.point);
+    }
+    return;
+}
+
+/// Substep with broad-phase bounds and six inelastic/friction contact passes.
+pub fun step_rigid_world(world: World, dt: Float) -> List<RigidProxy> {
+    if (not bounded_number(dt, 1.0) or dt < 0.0 or dt > 1.0 / 30.0) {
+        fail("Rigid bodies require a finite substep in 0..1/30 seconds");
+    }
+    let proxies: List<RigidProxy> = [];
+    for body: Body in world.bodies {
+        if (not bounded_motion(body)) { fail("Non-finite or out-of-world rigid-body state"); }
+        let proxy: RigidProxy = make_proxy(body);
+        if (body.dynamic) {
+            body.velocity.x = float(max(-20.0, min(20.0, body.velocity.x + world.gravity.x * dt)));
+            body.velocity.y = float(max(-20.0, min(20.0, body.velocity.y + world.gravity.y * dt)));
+            body.angular_velocity = float(max(-30.0, min(30.0, body.angular_velocity)));
+            let center_x: Float = proxy.center.x + body.velocity.x * dt;
+            let center_y: Float = proxy.center.y + body.velocity.y * dt;
+            body.angle += body.angular_velocity * dt;
+            if (body.angle > 3.141592653589793) { body.angle -= 6.283185307179586; }
+            if (body.angle < -3.141592653589793) { body.angle += 6.283185307179586; }
+            let offset: Vec2 = rotated(proxy.local_center, body.angle);
+            body.position.x = center_x - offset.x;
+            body.position.y = center_y - offset.y;
+            refresh(proxy);
+        }
+        push(proxies, proxy);
+    }
+    for iteration: Int in 0..6 {
+        for i: Int in 0..len(proxies) {
+            let a: RigidProxy = proxies[i];
+            for j: Int in (i + 1)..len(proxies) {
+                let b: RigidProxy = proxies[j];
+                if ((a.body.dynamic or b.body.dynamic) and proxies_overlap(a, b)) {
+                    let result: contact.ContactResult = contact.contact_convex(a.polygon, b.polygon, 0.0000001);
+                    if (result.status == "invalid") { fail("Invalid convex body reached the contact solver"); }
+                    if (result.status == "overlap") { resolve(a, b, result); }
+                }
+            }
+        }
+    }
+    return proxies;
+}
+
+/// Kinematic upright character against the same actual convex outlines.
+pub fun resolve_character(character: Body, proxies: List<RigidProxy>) -> Bool {
+    let proxy: RigidProxy = make_proxy(character);
+    mut grounded: Bool = false;
+    for iteration: Int in 0..3 {
+        for obstacle: RigidProxy in proxies {
+            if (proxies_overlap(proxy, obstacle)) {
+                let result: contact.ContactResult = contact.contact_convex(proxy.polygon, obstacle.polygon, 0.0000001);
+                if (result.status == "invalid") { fail("Invalid character contact shape"); }
+                if (result.status == "overlap") {
+                    translate(proxy, result.normal.x * result.depth, result.normal.y * result.depth);
+                    let relative: Vec2 = subtract(character.velocity, point_velocity(obstacle, result.point));
+                    let closing: Float = dot(relative, result.normal);
+                    if (closing < 0.0) {
+                        character.velocity.x -= result.normal.x * closing;
+                        character.velocity.y -= result.normal.y * closing;
+                    }
+                    if (result.normal.y >= 0.55) { grounded = true; }
+                }
+            }
+        }
+    }
+    return grounded;
+}
+
+pub fun retire_debris(world: World) -> Nil {
+    let retained: List<Body> = [];
+    for body: Body in world.bodies {
+        if (not body.dynamic or (body.position.y > -12.0 and abs(body.position.x) < 40.0)) {
+            push(retained, body);
+        }
+    }
+    world.bodies = retained;
+    return;
+}
