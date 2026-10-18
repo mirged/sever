@@ -54,7 +54,7 @@ does not yet constrain physics; that work belongs to milestone 3.
 
 ## Geometry API v1 (authorized for Agent 2)
 
-Implement `src/geometry/slice.may` with these public declarations:
+Implemented in `src/geometry/slice.may` with these public declarations:
 
 ```may
 pub struct SliceResult {

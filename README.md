@@ -7,6 +7,11 @@ drop machinery by severing cables, dismantle enemies, and turn debris into weapo
 course, reach the exit, pause, and reset. In-game cutting, dynamic fragments,
 enemies, and machinery remain later milestones.
 
+The convex cutting kernel is implemented, reviewed and merged as a library.
+See [its contract and numeric limits](src/geometry/README.md) and
+[Agent 1's integration review](docs/GEOMETRY_REVIEW.md). It is not yet connected
+to the movement lab's rectangle-only contact handling.
+
 Gameplay and simulation use high-level, strictly typed Maylang. Python is limited
 to development tooling. The graphical client uses Maylang's native UI adapter;
 the world, controller, timing, projection and polygon fill all remain Maylang.
