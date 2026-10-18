@@ -41,6 +41,7 @@ fun run_workshop() -> Nil {
     print("Renderer:", ui.renderer(window));
     let started: Float = float(clock());
     mut rendered_frames: Int = 0;
+    mut stop_reason: Str = "window_closed";
     mut training: Training = create_training();
     mut timer: StepClock = create_clock();
     mut paused: Bool = false;
@@ -52,6 +53,7 @@ fun run_workshop() -> Nil {
             }
             canvas.draw_scene(window, training, false);
             rendered_frames = 1;
+            stop_reason = "tick_limit";
         } else {
             mut previous: Float = float(clock());
             mut jump_queued: Bool = false;
@@ -59,7 +61,8 @@ fun run_workshop() -> Nil {
             mut next_report: Int = 60;
             while (running) {
                 let event: ui.Event = ui.poll_for(window, 8);
-                if (event.kind == "close" or ui.key_pressed(window, 256)) { break; }
+                if (event.kind == "close") { break; }
+                if (ui.key_pressed(window, 256)) { stop_reason = "escape"; break; }
                 let focused: Bool = demo or ui.focused(window);
                 let reset: Bool = ui.key_pressed(window, 82);
                 let toggle_pause: Bool = ui.key_pressed(window, 80);
@@ -90,6 +93,7 @@ fun run_workshop() -> Nil {
                 if (ui.key_down(window, 65) or ui.key_down(window, 263)) { direction -= 1; }
                 if (ui.key_down(window, 68) or ui.key_down(window, 262)) { direction += 1; }
                 for tick: Int in 0..ticks {
+                    if (limit > 0 and training.world.tick >= limit) { break; }
                     if (cut_demo) { demo_cut(training); }
                     step_training(training, if (demo) { demo_controls(training) }
                         else { Controls(direction, jump_queued) });
@@ -101,7 +105,10 @@ fun run_workshop() -> Nil {
                     print("Workshop tick:", training.world.tick);
                     next_report += 60;
                 }
-                if (limit > 0 and training.world.tick >= limit) { running = false; }
+                if (limit > 0 and training.world.tick >= limit) {
+                    stop_reason = "tick_limit";
+                    running = false;
+                }
             }
         }
         if (snapshot != "") { ui.snapshot(window, snapshot); }
@@ -111,6 +118,7 @@ fun run_workshop() -> Nil {
                 if (body.dynamic) { dynamic_bodies += 1; }
             }
             write_file(report, json_stringify({"ticks": training.world.tick,
+                "requested_ticks": limit, "stop_reason": stop_reason,
                 "finished": training.player.finished, "deaths": training.player.deaths,
                 "x": training.player.position.x, "y": training.player.position.y,
                 "renderer": ui.renderer(window), "dropped_seconds": timer.dropped_seconds,
