@@ -3,7 +3,7 @@
 A physics platformer about cutting the world apart. Slice platforms into ramps,
 drop machinery by severing cables, dismantle enemies, and turn debris into weapons.
 
-**Status: native cutting prototype.** Run and jump through the workshop, aim
+**Status: native cutting and spell prototype (integration review).** Run and jump through the workshop, aim
 with the mouse, and sever platforms or cables with **J**. Cut pieces preserve
 mass and momentum, fall, rotate, and collide with actual convex outlines. Reset
 restores the room. Enemies, machinery and bosses remain future milestones.
@@ -43,7 +43,7 @@ python3 tools/dev.py run workshop
 ```
 
 Move with **A/D** or **Left/Right**, jump with **Space/W/Up**, pause with **P**,
-aim with the **mouse**, cut with **J**, reset with **R**, and close with **Esc**.
+aim with the **mouse**, cut with **J**, select spells with **1–5**, cast with **F**, reset with **R**, and close with **Esc**.
 Normal play pauses when focus is lost. Native drawing is capped at 60 Hz;
 input events and fixed-step physics run independently of that draw deadline.
 The blade reaches 3.5 m along the aim
@@ -52,6 +52,11 @@ protected. Cut pieces smaller than 0.025 square metres are rejected as a pair;
 the room allows at most 24 bodies. Cutting a supported slab detaches its cables.
 Cutting the last cable releases its body; cables currently provide static
 support rather than swinging constraints.
+
+Spells add arc, lance, shatter, blink and rift, with mana, individual cooldowns
+and a resonance refund for changing spells. See [the spell catalogue](src/spells/README.md)
+and [the native integration evidence and open review issue](docs/SPELL_UI_VALIDATION.md).
+`--spell-demo` exercises blink, lance and shatter through the same casting adapter.
 
 The native target needs the host C compiler and X11/Xi/Xcursor/OpenGL development
 libraries. Interactive play needs X11/XWayland and OpenGL 4.3. A vendored,

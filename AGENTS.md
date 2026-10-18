@@ -53,7 +53,9 @@ Do not assume the other agent's absolute paths exist. Do not spawn additional ag
 
 Agent 1 owns `main.may`, `src/core/`, `src/game/`, `src/physics/`, `src/render/`,
 `tests/core/`, tooling, manifests, CI, and shared docs. Agent 2 owns
-`src/geometry/` and `tests/geometry/`. Each owns only its outbound mailbox.
+`src/geometry/`, `tests/geometry/`, `src/spells/` and `tests/spells/`. The spell
+ownership follows the accepted spells-v1 proposal. Agent 1 owns the native
+casting adapter in `src/game/magic.may`. Each owns only its outbound mailbox.
 Send an interface proposal and obtain a pushed acceptance before changing a
 shared contract or touching the peer's files. Initial geometry API and task
 acceptance are preauthorized in the bootstrap request.
