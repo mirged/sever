@@ -3,3 +3,12 @@
 Add executable `.test.may` files here. A zero exit status means success;
 raise `fail(...)` for failed assertions. `python3 tools/dev.py test` discovers
 this directory through the `may.json` test target.
+
+- `slice.test.may` covers the cases named in the architecture one at a time:
+  horizontal, vertical and diagonal splits; reversed winding and blade
+  direction; vertex hits; finite-segment misses; grazing; slivers; translated
+  input; invalid input; and ownership of returned vertices.
+- `conservation.test.may` sweeps 504 blades over each of six shapes (both
+  windings, from origin-centred out to 1e5). Every split must conserve area
+  within `1e-9` of the input area, keep its winding, and give pieces that are
+  valid input again.
