@@ -54,15 +54,33 @@ native calls. Tests are in [`tests/geometry/`](../../tests/geometry/README.md).
 - Arithmetic is binary64 with no exact predicates. Classification error grows
   with coordinate magnitude, roughly `1e-16 × |coordinate|`. Choose `epsilon`
   well above that: at least about `1e-9` times the largest coordinate
-  magnitude. The tests use `epsilon = 1e-6` with coordinates from about `1e-5`
-  up to `1e6`.
+  magnitude. Most tests use `epsilon = 1e-6` with coordinates up to `1e6`. The
+  scale evidence also cuts a 1 mm square with `epsilon = 1e-9` and a 10 km
+  square at `1e8` with `epsilon = 1e-3`.
 - The coordinate limit of `1e9` keeps cross products far from overflow.
 - Measured area conservation: `|area(left) + area(right) − area(input)|` stays
-  below `1e-9 × area(input)` for every split in the tests, including shapes
-  translated to `1e5` and `1e6`.
-- Under the pinned runtime, NaN is ordered as true in every comparison. The
+  below `1e-9 × area(input)` for every split in the tests. In the scale
+  evidence, the observed relative error is at most about `2e-16`.
+- Blade length does not change any decision. The same supporting line with
+  reaches from `1.5` to `1e5` gives identical pieces, and the same
+  `0.99e-6`/`1.01e-6` miss/split boundary. Very distant endpoints still cost
+  precision, since the line's position is known only to about
+  `1e-16 × |endpoint|`.
+- Under the pinned runtime, NaN compares as true in every comparison. The
   finiteness check is written to reject NaN either way, but callers should not
-  rely on NaN comparisons in other code.
+  rely on NaN comparisons in other code. A minimal reproducer:
+
+  ```may
+  let huge: Float = 1.0e300;
+  let infinity: Float = huge * huge;  // prints as 0e1
+  let nan: Float = infinity - infinity;
+  print(nan == nan, nan != nan, nan < 1.0, nan > 1.0);  // true false true true
+  ```
+
+  `x != x` therefore does not detect NaN here. The kernel rejects a coordinate
+  when `x > 1e9 or x < -1e9`, and otherwise also requires
+  `x <= 1e9 and x >= -1e9`. The first test catches NaN under this runtime and
+  the second catches it under IEEE rules.
 - Validation costs O(n²) in the vertex count. That is meant for small convex
   game outlines (tens of vertices), not large meshes.
 - Concave input is rejected as `invalid`. It needs decomposition, which is a

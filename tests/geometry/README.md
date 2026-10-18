@@ -12,3 +12,7 @@ this directory through the `may.json` test target.
   windings, from origin-centred out to 1e5). Every split must conserve area
   within `1e-9` of the input area, keep its winding, and give pieces that are
   valid input again.
+- `evidence.test.may` prints the reviewed expected/observed matrix and fails
+  on any mismatch. It also checks that stretching the blade along its line
+  changes nothing, measures area conservation from a 1 mm square up to
+  coordinates of `1e8`, and confirms the input outline is untouched.
