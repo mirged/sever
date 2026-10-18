@@ -1,0 +1,46 @@
+import "../physics/transforms.may";
+
+/// Render deadlines are independent of simulation catch-up and event delivery.
+pub struct FramePacer {
+    next_frame: Float,
+    last_time: Float,
+    started: Bool
+}
+
+pub fun create_pacer() -> FramePacer {
+    return FramePacer(0.0, 0.0, false);
+}
+
+/// No render backlog: after a long stall, draw once and resume from now.
+pub fun frame_due(pacer: FramePacer, now: Float) -> Bool {
+    if (not bounded_number(now, 1.0e12)) {
+        pacer.started = false;
+        return false;
+    }
+    let interval: Float = 1.0 / 60.0;
+    if (not pacer.started or now < pacer.last_time) {
+        pacer.started = true;
+        pacer.last_time = now;
+        pacer.next_frame = now + interval;
+        return true;
+    }
+    pacer.last_time = now;
+    if (now + 0.000000001 < pacer.next_frame) { return false; }
+    if (now - pacer.next_frame >= interval) {
+        pacer.next_frame = now + interval;
+    } else {
+        pacer.next_frame += interval;
+    }
+    return true;
+}
+
+/// Events can wake the poll early; idle waits end at the next render deadline.
+pub fun frame_wait_ms(pacer: FramePacer, now: Float) -> Int {
+    if (not pacer.started or not bounded_number(now, 1.0e12)
+            or now < pacer.last_time) { return 0; }
+    let remaining: Float = (pacer.next_frame - now) * 1000.0;
+    if (remaining <= 0.0) { return 0; }
+    if (remaining >= 17.0) { return 17; }
+    let whole: Int = int(remaining);
+    return if (float(whole) < remaining) { whole + 1 } else { whole };
+}

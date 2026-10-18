@@ -1,0 +1,43 @@
+import "../../src/render/pacing.may";
+
+mut pacing_checks: Int = 0;
+fun expect_pacing(value: Bool, label: Str) -> Nil {
+    if (not value) { fail("FAIL: " + label); }
+    pacing_checks += 1;
+    return;
+}
+
+let frames: FramePacer = create_pacer();
+expect_pacing(frame_wait_ms(frames, 100.0) == 0, "first event poll does not delay first frame");
+expect_pacing(frame_due(frames, 100.0), "first frame draws immediately");
+expect_pacing(not frame_due(frames, 100.0), "multiple queued events cannot redraw the same instant");
+expect_pacing(not frame_due(frames, 100.010), "early input is processed without an early draw");
+expect_pacing(frame_wait_ms(frames, 100.010) == 7, "round remaining time up to milliseconds");
+expect_pacing(frame_due(frames, 100.0 + 1.0 / 60.0), "draw exactly at the next deadline");
+expect_pacing(not frame_due(frames, 100.020), "no second frame immediately after a deadline");
+expect_pacing(frame_due(frames, 100.034), "slight lateness still draws");
+expect_pacing(frame_wait_ms(frames, 100.040) == 10, "small lateness preserves the original cadence");
+expect_pacing(frame_due(frames, 150.0), "long stall allows one frame");
+expect_pacing(not frame_due(frames, 150.0), "long stall does not schedule catch-up draws");
+expect_pacing(frame_wait_ms(frames, 150.0) == 17, "stall resumes with one full frame interval");
+expect_pacing(frame_due(frames, 90.0), "backward wall-clock jump resets render deadline");
+expect_pacing(frame_wait_ms(frames, 89.0) == 0, "backward clock cannot cause a long idle wait");
+expect_pacing(frame_wait_ms(frames, 200.0) == 0, "overdue frame does not wait");
+
+// High event rates must not turn input delivery into a rendering multiplier.
+let burst: FramePacer = create_pacer();
+mut rendered: Int = 0;
+for poll: Int in 0..1000 {
+    if (frame_due(burst, float(poll) / 1000.0)) { rendered += 1; }
+}
+expect_pacing(rendered == 60, "1000 event polls schedule only 60 frames in one second");
+
+let huge: Float = 1.0e300;
+let infinity: Float = huge * huge;
+let nan: Float = infinity - infinity;
+expect_pacing(not frame_due(burst, nan), "reject pinned-runtime NaN without comparison tricks");
+expect_pacing(frame_wait_ms(burst, nan) == 0, "non-finite clock cannot reach integer conversion");
+expect_pacing(frame_due(burst, 1.0), "valid clock recovers after NaN");
+expect_pacing(not frame_due(burst, infinity), "reject infinity");
+expect_pacing(frame_due(burst, 2.0), "valid clock recovers after infinity");
+print("PASS: " + str(pacing_checks) + " render pacing checks");
