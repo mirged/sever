@@ -1,0 +1,223 @@
+import "../core/types.may";
+import "../core/math.may";
+
+/// Status is exactly "split", "miss" or "invalid". A split holds two pieces:
+/// pieces[0] lies left of the blade direction, pieces[1] lies right of it.
+pub struct SliceResult {
+    status: Str,
+    pieces: List<Polygon>
+}
+
+/// Largest accepted coordinate magnitude, in world units. Keeping inputs well
+/// below the binary64 overflow range also keeps cross products finite.
+let MAX_COORDINATE: Float = 1.0e9;
+
+fun miss() -> SliceResult {
+    return SliceResult("miss", []);
+}
+
+fun invalid() -> SliceResult {
+    return SliceResult("invalid", []);
+}
+
+/// Written so that it rejects NaN both under IEEE comparisons (all false) and
+/// under the pinned runtime, where every ordered comparison with NaN is true.
+fun in_range(value: Float) -> Bool {
+    if (value > MAX_COORDINATE or value < -MAX_COORDINATE) {
+        return false;
+    }
+    return value <= MAX_COORDINATE and value >= -MAX_COORDINATE;
+}
+
+fun valid_point(point: Vec2) -> Bool {
+    return in_range(point.x) and in_range(point.y);
+}
+
+fun length(value: Vec2) -> Float {
+    return sqrt(dot(value, value));
+}
+
+fun copy_point(point: Vec2) -> Vec2 {
+    return Vec2(point.x, point.y);
+}
+
+/// Strict convexity with a world-distance margin: every edge is longer than
+/// epsilon, and every vertex not on an edge lies more than epsilon inside that
+/// edge's supporting line. Near-collinear, duplicate, reflex and
+/// self-intersecting outlines therefore fail. Either winding is accepted.
+fun strictly_convex(shape: Polygon, epsilon: Float) -> Bool {
+    let count: Int = len(shape.vertices);
+    if (count < 3) {
+        return false;
+    }
+    for vertex: Vec2 in shape.vertices {
+        if (not valid_point(vertex)) {
+            return false;
+        }
+    }
+    let area: Float = signed_area(shape);
+    mut winding: Float = 1.0;
+    if (area < 0.0) {
+        winding = -1.0;
+    }
+    for i: Int in 0..count {
+        let from: Vec2 = shape.vertices[i];
+        let edge: Vec2 = subtract(shape.vertices[(i + 1) % count], from);
+        let edge_length: Float = length(edge);
+        if (not (edge_length > epsilon)) {
+            return false;
+        }
+        for j: Int in 0..count {
+            if (j != i and j != (i + 1) % count) {
+                let inside: Float = winding * cross(edge, subtract(shape.vertices[j], from)) / edge_length;
+                if (not (inside > epsilon)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+/// -1, 0 or 1: which side of the blade line a signed distance falls on.
+fun side(distance: Float, epsilon: Float) -> Int {
+    if (distance > epsilon) {
+        return 1;
+    }
+    if (distance < -epsilon) {
+        return -1;
+    }
+    return 0;
+}
+
+/// Boundary point where the outline passes from vertex `from` to vertex `to`
+/// across the blade line. Vertices strictly between them are on the line; one
+/// such vertex is the crossing itself. Returns nil when several vertices lie on
+/// the line, which only happens for cuts running along the outline.
+fun crossing(shape: Polygon, distances: List<Float>, from: Int, to: Int) -> Option<Vec2> {
+    let count: Int = len(shape.vertices);
+    let between: Int = (to - from - 1 + count) % count;
+    if (between == 1) {
+        return copy_point(shape.vertices[(from + 1) % count]);
+    }
+    if (between > 1) {
+        return nil;
+    }
+    let a: Vec2 = shape.vertices[from];
+    let b: Vec2 = shape.vertices[to];
+    let t: Float = distances[from] / (distances[from] - distances[to]);
+    return add(a, scale(subtract(b, a), t));
+}
+
+/// Fresh copies of the vertices from index `first` forward to `last`.
+fun run(shape: Polygon, first: Int, last: Int) -> List<Vec2> {
+    let count: Int = len(shape.vertices);
+    let points: List<Vec2> = [];
+    mut index: Int = first;
+    while (true) {
+        push(points, copy_point(shape.vertices[index]));
+        if (index == last) {
+            break;
+        }
+        index = (index + 1) % count;
+    }
+    return points;
+}
+
+/// Whether a boundary point lies on the finite blade, within epsilon of it.
+fun on_blade(point: Vec2, start: Vec2, direction: Vec2, blade_length: Float, epsilon: Float) -> Bool {
+    let along: Float = dot(subtract(point, start), direction);
+    return along >= -epsilon and along <= blade_length + epsilon;
+}
+
+/// Split a convex polygon with the finite blade segment from `start` to `end`.
+/// The cut succeeds only when the blade reaches both points where its line
+/// crosses the outline, so a blade that starts or ends inside the shape misses.
+/// Grazing a vertex or running along an edge misses, as does any cut that would
+/// leave a piece thinner than epsilon. Pieces keep the input winding and hold
+/// fresh vertices; the input is never mutated. Invalid input or a blade no
+/// longer than epsilon reports "invalid". See src/geometry/README.md for the
+/// tolerance policy and numeric limits.
+pub fun split_convex(shape: Polygon, start: Vec2, end: Vec2, epsilon: Float) -> SliceResult {
+    if (not (in_range(epsilon) and epsilon > 0.0)) {
+        return invalid();
+    }
+    if (not (valid_point(start) and valid_point(end) and strictly_convex(shape, epsilon))) {
+        return invalid();
+    }
+    let blade: Vec2 = subtract(end, start);
+    let blade_length: Float = length(blade);
+    if (not (blade_length > epsilon)) {
+        return invalid();
+    }
+    let direction: Vec2 = scale(blade, 1.0 / blade_length);
+    let normal: Vec2 = Vec2(-direction.y, direction.x);
+
+    let count: Int = len(shape.vertices);
+    let distances: List<Float> = [];
+    let sides: List<Int> = [];
+    let marked: List<Int> = [];
+    for i: Int in 0..count {
+        let distance: Float = dot(subtract(shape.vertices[i], start), normal);
+        push(distances, distance);
+        push(sides, side(distance, epsilon));
+        if (sides[i] != 0) {
+            push(marked, i);
+        }
+    }
+
+    // Consecutive off-line vertices of opposite sides bracket a crossing.
+    mut left_last: Int = -1;
+    mut right_first: Int = -1;
+    mut right_last: Int = -1;
+    mut left_first: Int = -1;
+    mut changes: Int = 0;
+    let marked_count: Int = len(marked);
+    for k: Int in 0..marked_count {
+        let here: Int = marked[k];
+        let next: Int = marked[(k + 1) % marked_count];
+        if (sides[here] != sides[next]) {
+            changes += 1;
+            if (sides[here] == 1) {
+                left_last = here;
+                right_first = next;
+            } else {
+                right_last = here;
+                left_first = next;
+            }
+        }
+    }
+    if (changes != 2) {
+        return miss();
+    }
+
+    let entry: Option<Vec2> = crossing(shape, distances, left_last, right_first);
+    let exit: Option<Vec2> = crossing(shape, distances, right_last, left_first);
+    if (entry == nil or exit == nil) {
+        return miss();
+    }
+    let first_cut: Vec2 = entry ?? start;
+    let second_cut: Vec2 = exit ?? start;
+    if (not (on_blade(first_cut, start, direction, blade_length, epsilon)
+        and on_blade(second_cut, start, direction, blade_length, epsilon))) {
+        return miss();
+    }
+
+    let left: List<Vec2> = [copy_point(second_cut)];
+    for point: Vec2 in run(shape, left_first, left_last) {
+        push(left, point);
+    }
+    push(left, copy_point(first_cut));
+    let right: List<Vec2> = [copy_point(first_cut)];
+    for point: Vec2 in run(shape, right_first, right_last) {
+        push(right, point);
+    }
+    push(right, copy_point(second_cut));
+
+    let left_piece: Polygon = Polygon(left);
+    let right_piece: Polygon = Polygon(right);
+    if (not (strictly_convex(left_piece, epsilon) and strictly_convex(right_piece, epsilon))) {
+        return miss();
+    }
+    return SliceResult("split", [left_piece, right_piece]);
+}

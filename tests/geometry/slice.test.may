@@ -1,0 +1,189 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/geometry/slice.may";
+
+let EPSILON: Float = 0.000001;
+mut checks: Int = 0;
+
+fun expect(value: Bool, label: Str) -> Nil {
+    if (not value) {
+        fail("FAIL: " + label);
+    }
+    checks += 1;
+    return;
+}
+
+fun near(actual: Float, expected: Float, tolerance: Float) -> Bool {
+    let difference: Float = actual - expected;
+    return difference > -tolerance and difference < tolerance;
+}
+
+fun square(size: Float) -> Polygon {
+    return Polygon([Vec2(0.0, 0.0), Vec2(size, 0.0), Vec2(size, size), Vec2(0.0, size)]);
+}
+
+fun cut(shape: Polygon, ax: Float, ay: Float, bx: Float, by: Float) -> SliceResult {
+    return split_convex(shape, Vec2(ax, ay), Vec2(bx, by), EPSILON);
+}
+
+fun expect_status(result: SliceResult, status: Str, label: Str) -> Nil {
+    expect(result.status == status, label + ": status " + status + ", got " + result.status);
+    if (status != "split") {
+        expect(len(result.pieces) == 0, label + ": no pieces");
+    }
+    return;
+}
+
+/// Checks a split: two pieces with the expected areas (left of the blade
+/// first), the input winding, and the input area conserved.
+fun expect_split(shape: Polygon, result: SliceResult, left_area: Float, right_area: Float, label: Str) -> Nil {
+    expect_status(result, "split", label);
+    expect(len(result.pieces) == 2, label + ": two pieces");
+    let original: Float = signed_area(shape);
+    let left: Float = signed_area(result.pieces[0]);
+    let right: Float = signed_area(result.pieces[1]);
+    let tolerance: Float = 0.000000001 * abs(original);
+    expect(near(abs(left), left_area, tolerance), label + ": left area");
+    expect(near(abs(right), right_area, tolerance), label + ": right area");
+    expect(left * original > 0.0 and right * original > 0.0, label + ": winding kept");
+    expect(near(left + right, original, tolerance), label + ": area conserved");
+    return;
+}
+
+// Splits through the interior.
+let rect: Polygon = rectangle(4.0, 2.0);
+let horizontal: SliceResult = cut(rect, -3.0, 0.0, 3.0, 0.0);
+expect_split(rect, horizontal, 4.0, 4.0, "horizontal");
+expect(len(horizontal.pieces[0].vertices) == 4 and len(horizontal.pieces[1].vertices) == 4,
+    "horizontal: quadrilateral pieces");
+for vertex: Vec2 in horizontal.pieces[0].vertices {
+    expect(vertex.y > -EPSILON, "horizontal: left piece is above an eastward blade");
+}
+for vertex: Vec2 in horizontal.pieces[1].vertices {
+    expect(vertex.y < EPSILON, "horizontal: right piece is below an eastward blade");
+}
+expect_split(rect, cut(rect, 0.5, -2.0, 0.5, 2.0), 5.0, 3.0, "vertical");
+let box: Polygon = square(2.0);
+expect_split(box, cut(box, -1.0, 0.75, 3.0, 1.75), 1.5, 2.5, "diagonal across two edges");
+
+// Winding and blade direction.
+let clockwise: Polygon = Polygon([Vec2(0.0, 0.0), Vec2(0.0, 2.0), Vec2(2.0, 2.0), Vec2(2.0, 0.0)]);
+let clockwise_cut: SliceResult = cut(clockwise, -1.0, 0.75, 3.0, 1.75);
+expect_split(clockwise, clockwise_cut, 1.5, 2.5, "clockwise input");
+expect(signed_area(clockwise_cut.pieces[0]) < 0.0, "clockwise pieces stay clockwise");
+expect_split(box, cut(box, 3.0, 1.75, -1.0, 0.75), 2.5, 1.5, "reversed blade swaps sides");
+
+// Vertex hits: crossings exactly at existing vertices create no new vertex.
+let corner_to_corner: SliceResult = cut(box, -1.0, -1.0, 3.0, 3.0);
+expect_split(box, corner_to_corner, 2.0, 2.0, "diagonal through two vertices");
+expect(len(corner_to_corner.pieces[0].vertices) == 3 and len(corner_to_corner.pieces[1].vertices) == 3,
+    "vertex-to-vertex cut makes triangles");
+let triangle: Polygon = Polygon([Vec2(0.0, 0.0), Vec2(4.0, 0.0), Vec2(0.0, 4.0)]);
+let apex: SliceResult = cut(triangle, -1.0, -1.0, 3.0, 3.0);
+expect_split(triangle, apex, 4.0, 4.0, "vertex to edge");
+expect(len(apex.pieces[0].vertices) == 3 and len(apex.pieces[1].vertices) == 3,
+    "vertex-to-edge cut makes triangles");
+expect_split(box, cut(box, 0.0, 0.0, 2.0, 2.0), 2.0, 2.0, "blade ends exactly on both vertices");
+expect_split(box, cut(box, 0.0, 1.0, 2.0, 1.0), 2.0, 2.0, "blade ends exactly on the boundary");
+
+// The blade is a finite segment.
+expect_status(cut(box, 5.0, 5.0, 6.0, 7.0), "miss", "far outside");
+expect_status(cut(box, -3.0, 1.0, -1.0, 1.0), "miss", "supporting line crosses, segment stops short");
+expect_status(cut(box, 1.0, 1.0, 5.0, 1.0), "miss", "starts inside, ends outside");
+expect_status(cut(box, -5.0, 1.0, 1.0, 1.0), "miss", "starts outside, ends inside");
+expect_status(cut(box, 0.5, 1.0, 1.5, 1.0), "miss", "too short to cross");
+expect_status(cut(box, 0.0, 1.0, 1.999, 1.0), "miss", "stops 1 mm before the far edge");
+expect_split(box, cut(box, 0.0, 1.0, 2.0 - 0.0000005, 1.0), 2.0, 2.0, "within epsilon of the far edge");
+
+// Grazing and cutting along edges.
+expect_status(cut(box, 1.0, 3.0, 3.0, 1.0), "miss", "touches one vertex");
+expect_status(cut(box, -1.0, 0.0, 3.0, 0.0), "miss", "along an edge");
+expect_status(cut(box, 3.0, 2.0, -1.0, 2.0), "miss", "along an edge, reversed");
+expect_status(cut(box, -1.0, 0.0000001, 3.0, 0.0000001), "miss", "within epsilon of an edge");
+expect_status(cut(box, -1.0, -0.0000001, 3.0, 0.0000003), "miss", "nearly parallel to an edge");
+expect_status(cut(box, 2.0 - 0.0000002, 3.0, 2.0 + 0.0000003, -1.0), "miss", "within epsilon of a side");
+
+// Slivers: thinner than epsilon misses, thicker splits and keeps its area.
+expect_status(cut(box, -1.0, 2.0 - 0.0000005, 3.0, 2.0 - 0.0000005), "miss", "sliver below epsilon");
+expect_split(box, cut(box, -1.0, 2.0 - 0.00001, 3.0, 2.0 - 0.00001), 0.00002, 4.0 - 0.00002,
+    "thin strip above epsilon");
+let corner: SliceResult = cut(box, 3.0, 1.0 - 0.00001, 1.0 - 0.00001, 3.0);
+expect_split(box, corner, 4.0 - 0.00000000005, 0.00000000005, "tiny corner triangle");
+expect(len(corner.pieces[1].vertices) == 3, "corner sliver is a triangle");
+expect(near(signed_area(corner.pieces[1]), 0.00000000005, 0.000000000000001), "corner sliver area");
+let tip: Polygon = Polygon([Vec2(0.0, 0.0), Vec2(1.0, 0.0), Vec2(0.5, 0.0000004)]);
+expect_status(cut(tip, 0.5, -1.0, 0.5, 1.0), "invalid", "input thinner than epsilon");
+let strip: Polygon = rectangle(1.0, 0.00001);
+expect_split(strip, cut(strip, 0.0, -1.0, 0.0, 1.0), 0.000005, 0.000005, "thin input splits across");
+expect_status(cut(strip, -1.0, 0.0, 1.0, 0.0), "split", "thin input splits along its length");
+
+// Far from the origin with a scale-appropriate tolerance.
+let far: Polygon = Polygon([Vec2(1000000.0, 1000000.0), Vec2(1000002.0, 1000000.0),
+    Vec2(1000002.0, 1000002.0), Vec2(1000000.0, 1000002.0)]);
+expect_split(far, cut(far, 999999.0, 1000000.75, 1000003.0, 1000001.75), 1.5, 2.5, "translated diagonal");
+
+// Invalid input.
+expect_status(split_convex(box, Vec2(-1.0, 1.0), Vec2(3.0, 1.0), 0.0), "invalid", "zero epsilon");
+expect_status(split_convex(box, Vec2(-1.0, 1.0), Vec2(3.0, 1.0), -0.001), "invalid", "negative epsilon");
+expect_status(cut(Polygon([]), -1.0, 1.0, 3.0, 1.0), "invalid", "empty outline");
+expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 2.0)]), -1.0, 1.0, 3.0, 1.0), "invalid", "two vertices");
+expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(1.0, 0.0), Vec2(2.0, 0.0)]), 1.0, -1.0, 1.0, 1.0),
+    "invalid", "collinear triangle");
+expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(2.0, 0.0), Vec2(2.0, 2.0), Vec2(0.0, 2.0)]),
+    -1.0, 1.0, 3.0, 1.0), "invalid", "duplicate vertex");
+expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(1.0, 0.0), Vec2(2.0, 0.0), Vec2(2.0, 2.0), Vec2(0.0, 2.0)]),
+    -1.0, 1.0, 3.0, 1.0), "invalid", "collinear middle vertex");
+expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(1.0, 0.5), Vec2(2.0, 2.0), Vec2(0.0, 2.0)]),
+    -1.0, 1.0, 3.0, 1.0), "invalid", "concave outline");
+expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 2.0), Vec2(2.0, 0.0), Vec2(0.0, 2.0)]),
+    -1.0, 1.0, 3.0, 1.0), "invalid", "self-intersecting bow tie");
+expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(2.0, 2.0), Vec2(0.0, 2.0),
+    Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(2.0, 2.0), Vec2(0.0, 2.0)]), -1.0, 1.0, 3.0, 1.0),
+    "invalid", "outline wound twice");
+let pentagram: Polygon = Polygon([Vec2(0.0, 1.0), Vec2(0.5878, -0.809), Vec2(-0.9511, 0.309),
+    Vec2(0.9511, 0.309), Vec2(-0.5878, -0.809)]);
+expect_status(cut(pentagram, -2.0, 0.0, 2.0, 0.0), "invalid", "star outline");
+expect_status(cut(box, 1.0, 1.0, 1.0, 1.0), "invalid", "zero-length blade");
+expect_status(cut(box, 1.0, 1.0, 1.0000005, 1.0), "invalid", "blade shorter than epsilon");
+let huge: Float = 1.0e300;
+let infinity: Float = huge * huge;
+let not_a_number: Float = infinity - infinity;
+expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(not_a_number, 0.0), Vec2(0.0, 2.0)]), -1.0, 1.0, 3.0, 1.0),
+    "invalid", "NaN vertex");
+expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(infinity, 0.0), Vec2(0.0, 2.0)]), -1.0, 1.0, 3.0, 1.0),
+    "invalid", "infinite vertex");
+expect_status(cut(box, not_a_number, 1.0, 3.0, 1.0), "invalid", "NaN blade start");
+expect_status(cut(box, -1.0, 1.0, 3.0, -infinity), "invalid", "infinite blade end");
+expect_status(split_convex(box, Vec2(-1.0, 1.0), Vec2(3.0, 1.0), not_a_number), "invalid", "NaN epsilon");
+expect_status(cut(square(10000000000.0), -1.0, 1.0, 3.0, 1.0), "invalid", "coordinates beyond 1e9");
+
+// Inputs are not mutated and pieces own fresh vertices.
+let probe: Polygon = square(2.0);
+let before: List<Float> = [];
+for vertex: Vec2 in probe.vertices {
+    push(before, vertex.x);
+    push(before, vertex.y);
+}
+let blade_start: Vec2 = Vec2(-1.0, -1.0);
+let blade_end: Vec2 = Vec2(3.0, 3.0);
+let owned: SliceResult = split_convex(probe, blade_start, blade_end, EPSILON);
+expect_status(owned, "split", "ownership cut");
+for piece: Polygon in owned.pieces {
+    for vertex: Vec2 in piece.vertices {
+        vertex.x += 100.0;
+        vertex.y += 100.0;
+    }
+}
+mut index: Int = 0;
+for vertex: Vec2 in probe.vertices {
+    expect(vertex.x == before[index] and vertex.y == before[index + 1], "input vertex unchanged");
+    index += 2;
+}
+expect(len(probe.vertices) == 4, "input vertex count unchanged");
+expect(blade_start.x == -1.0 and blade_end.y == 3.0, "blade unchanged");
+let shared_cut: SliceResult = cut(box, -1.0, 1.0, 3.0, 1.0);
+shared_cut.pieces[0].vertices[0].x = 50.0;
+expect(shared_cut.pieces[1].vertices[len(shared_cut.pieces[1].vertices) - 1].x < 3.0,
+    "pieces do not share crossing vertices");
+
+print("PASS: " + str(checks) + " geometry checks");
