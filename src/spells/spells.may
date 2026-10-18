@@ -133,9 +133,12 @@ fun player_box(centre: Vec2) -> Polygon {
 }
 
 /// Whether the player's box at `centre` is provably clear: every body reports
-/// "separate". An "invalid" contact (a non-finite box, or a malformed body)
-/// is never treated as clear.
+/// "separate". A non-finite or out-of-range centre is never clear, even in an
+/// empty world, and an "invalid" contact (a malformed body) fails closed.
 pub fun clear_at(world: World, centre: Vec2) -> Bool {
+    if (not (bounded_number(centre.x, AIM_LIMIT) and bounded_number(centre.y, AIM_LIMIT))) {
+        return false;
+    }
     let box: Polygon = player_box(centre);
     for body: Body in world.bodies {
         if (contact_convex(box, world_polygon(body), 0.000001).status != "separate") {

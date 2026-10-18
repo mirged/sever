@@ -196,6 +196,43 @@ expect(cast_spell(open_room, far_caster, create_spellbook(), "lance", Vec2(10.0,
     "a caster beyond the world limit cannot cast");
 expect(clear_at(open_room, Vec2(0.0, 0.0)), "an empty room is clear");
 
+// agent1-0017 reproducers: both infinity signs and NaN, for the caster and
+// the clearance centre, an empty world, and an empty-outline obstacle. Every
+// rejection leaves mana, cooldowns, casts, the player and the world as they were.
+let positive_infinity: Float = huge_value * huge_value;
+let negative_infinity: Float = -positive_infinity;
+let bad_values: List<Float> = [lost_value, positive_infinity, negative_infinity];
+for bad: Float in bad_values {
+    expect(not clear_at(open_room, Vec2(bad, 0.65)) and not clear_at(open_room, Vec2(-5.0, bad)),
+        "a non-finite centre is not clear even in an empty world");
+    expect(not clear_at(create_training().world, Vec2(bad, 1.0)), "a non-finite centre is not clear in the room");
+    for axis: Int in 0..2 {
+        let room: Training = create_training();
+        mut origin: Vec2 = Vec2(bad, 0.65);
+        if (axis == 1) {
+            origin = Vec2(-6.0, bad);
+        }
+        room.player.position = origin;
+        let rejected_book: Spellbook = create_spellbook();
+        let bodies: Int = len(room.world.bodies);
+        let outcome: SpellReport = cast_spell(room.world, room.player, rejected_book, "blink", Vec2(-2.0, 0.65), 100);
+        expect(outcome.status == "invalid aim" and rejected_book.mana == 100.0 and rejected_book.casts == 0
+            and rejected_book.cooldowns[3] == 0, "a non-finite caster is rejected at no cost");
+        expect(len(room.world.bodies) == bodies and intact_cables(room.world) == 2
+            and room.player.velocity.x == 0.0 and room.player.velocity.y == 0.0, "a rejected cast touches nothing");
+        expect(cast_spell(room.world, room.player, rejected_book, "fireball", Vec2(-2.0, 0.65), 100).status
+            == "unknown spell", "unknown spell still takes precedence");
+    }
+    let aimed: Training = room_at(-6.0, 0.65);
+    let aimed_book: Spellbook = create_spellbook();
+    expect(cast_spell(aimed.world, aimed.player, aimed_book, "blink", Vec2(bad, 0.65), 100).status == "invalid aim"
+        and aimed_book.mana == 100.0 and near_point(aimed.player.position, -6.0, 0.65, EXACT),
+        "a non-finite destination is rejected at no cost");
+}
+let hollow: Training = create_training();
+push(hollow.world.bodies, Body(500, Polygon([]), Vec2(0.0, 0.0), Vec2(0.0, 0.0), 0.0, 0.0, false, false, "test"));
+expect(not clear_at(hollow.world, Vec2(-5.0, 0.65)), "an empty-outline obstacle fails closed");
+
 // Rift slices its own path: rising through the hanging slab cuts it at x = 1.
 let riser: Training = room_at(1.0, 4.5);
 let riser_book: Spellbook = create_spellbook();
