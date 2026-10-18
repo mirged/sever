@@ -1,7 +1,7 @@
 # Prompt for the second agent
 
-Copy the text below into the second agent's session. The workspace path in this
-setup is `/home/mirged/Workspace/chatgpt_workspace`.
+Copy the text below into the second agent's session. Agent 2 has its own
+independent workspace; every path below refers to that agent's workspace.
 
 ---
 
@@ -12,35 +12,49 @@ Agent 1, owns gameplay, rendering and integration. Your first task is
 
 Repository: `https://github.com/mirged/sever` (private).
 
-Read and write files only inside the user-provided workspace. The existing
-Maylang source repo is `<workspace>/maylang`; its compiler must be bootstrapped
-from the pinned source. Do not use an inherited `MAYC` installation. Keep all
+Read and write files only inside your own user-provided workspace. Obtain your
+own Maylang source checkout beside Sever and bootstrap the pinned compiler
+there. Do not use an inherited `MAYC` installation. Keep all
 temporary files, caches and outputs inside the workspace. Use high-level typed
 Maylang for all game and geometry logic. No raw syscalls, pointer arithmetic,
 assembly or C geometry implementation. Do not modify Maylang source.
 
-Use your own checkout on branch `agent2`. Do not switch branches or work in
-Agent 1's active checkout. In the shared workspace you can create a worktree:
+Create an independent clone on branch `agent2`. Agent 1's filesystem, build
+outputs and credentials are unavailable to you. Use GitHub as the only shared
+transport. Within your own workspace, make a project directory and clone:
 
 ```sh
-git -C <workspace>/sever worktree add <workspace>/sever-agent2 agent2
+mkdir -p sever-project
+cd sever-project
+git clone --branch agent2 https://github.com/mirged/sever.git sever
+git clone https://github.com/mirged/maylang.git maylang
+git -C maylang checkout --detach beb593cdcffb2ff4c30db060686c3eb312807d62
+cd sever
+git fetch origin
+git merge --no-edit origin/main
 ```
 
-If `agent2` exists only remotely, use:
+Run those commands from inside your workspace. The resulting layout is:
 
-```sh
-git -C <workspace>/sever fetch origin
-git -C <workspace>/sever worktree add -b agent2 <workspace>/sever-agent2 origin/agent2
+```text
+your-workspace/sever-project/
+    maylang/   # pinned source checkout, built locally
+    sever/     # your independent agent2 clone
 ```
 
-If you are on another machine, clone the `agent2` branch into your own workspace
-instead, and obtain the pinned sibling Maylang checkout there. Do not place a
-checkout outside the workspace.
+If those directories already exist, inspect and reuse suitable checkouts without
+overwriting unrelated work. Verify Maylang against `toolchain.json`. Authenticate
+to the private Sever repository using your own workspace-local GitHub credentials
+or connected GitHub account. Keep CLI configuration inside this project directory
+(for example, set `GH_CONFIG_DIR` to its `.auth/gh` directory). Never depend on
+Agent 1's credentials or access configuration outside your workspace. If access
+is missing, report that specific blocker to the human.
 
 From your checkout, read `AGENTS.md`, `docs/COMMUNICATION.md`,
 `docs/ARCHITECTURE.md`, and `docs/ROADMAP.md`. Fetch `origin/agent1` and read
 `messages/agent1_to_agent2.json` from that remote ref. The sender's pushed branch
-is authoritative. The bootstrap request should be `agent1-0001`.
+is authoritative. The bootstrap request is `agent1-0001`; also process subsequent
+messages, including `agent1-0002`, which clarifies independent workspaces.
 
 All communication with Agent 1 must be JSON messages in repository files, with
 commit + push delivery. Append only to `messages/agent2_to_agent1.json`, increment
@@ -48,7 +62,8 @@ sequence/ID, acknowledge processed peer sequences and reference reply IDs. Never
 edit Agent 1's mailbox. Do not use hidden agent chat, email, GitHub comments, or
 uncommitted files to communicate. Do not spawn further agents.
 
-First append an `accept` reply to `agent1-0001`, set `ack_sequence` to 1, validate,
+First append an `accept` reply to `agent1-0001`, set `ack_sequence` to the highest
+contiguous Agent 1 message you have processed, validate,
 commit and push `agent2` before substantial implementation. If blocked, send
 `blocked` with the concrete reason instead. A failed push means queued, never
 delivered. If shell network access is blocked but the GitHub connector works,

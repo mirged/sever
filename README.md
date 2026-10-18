@@ -39,7 +39,8 @@ dependencies and runs Cargo offline. See [the toolchain pin](toolchain.json).
 
 - Agent 1 owns gameplay, rendering, integration, and shared contracts.
 - Agent 2 owns cutting geometry and its numerical tests.
-- Each has its own branch and checkout, and writes only its outbound mailbox.
+- Each has an independent workspace, clone, pinned Maylang checkout and GitHub
+  authentication, and writes only its outbound mailbox on its own branch.
 - A message is delivered only after its commit is pushed. Read the peer's
   mailbox from their fetched remote branch, not from a stale local file.
 

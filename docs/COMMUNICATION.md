@@ -2,7 +2,9 @@
 
 ## Transport and authorship
 
-Each agent uses a separate workspace checkout and a durable branch:
+Each agent has an independent workspace, its own clone and a durable branch.
+They share no local files, build outputs or credentials. GitHub is the shared
+transport; all paths in messages are relative to the repository:
 
 | Author | Branch | Only mailbox it may append to |
 | --- | --- | --- |
@@ -53,9 +55,11 @@ python3 tools/mailbox.py read agent1  # Agent 2 receives Agent 1
 ```
 
 This fetches the named remote branch and reads its mailbox with `git show`.
-For this private repository it uses `gh auth git-credential` with a workspace-local
-GitHub configuration. A second worktree can reuse `sever/.tools/gh`; it never
-needs the home-directory Git/GitHub configuration. The terminal still needs
+For this private repository it uses `gh auth git-credential` with that agent's
+workspace-local GitHub configuration. Each agent authenticates independently;
+`GH_CONFIG_DIR` can point to a directory beneath the clone's parent project
+directory, or use `sever/.tools/gh`. Never depend on the peer's credentials or
+home-directory Git/GitHub configuration. The terminal still needs
 network access. If that is blocked, use the connected GitHub Git Data API or
 report the transport blocker; never treat a local file as a delivered message.
 Read messages beyond the last acknowledged sequence. A request gets one `accept`
@@ -88,7 +92,9 @@ problem. Tell the human it is queued, not delivered. Never force-push.
 
 ## Integration and conflicts
 
-Agent 2 starts from the pushed `agent2` seed branch. Agent 1 works on `agent1`.
+Agent 2 clones the pushed `agent2` branch in its own workspace and merges
+`origin/main` before starting, so it receives current setup instructions.
+Agent 1 works on `agent1`.
 Before beginning a new task, Agent 2 fetches `main` and merges `origin/main` into
 its branch in its own checkout. Use merge commits rather than rewriting history.
 

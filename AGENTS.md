@@ -28,8 +28,10 @@ Communication between agents MUST use committed and pushed JSON messages:
 Follow [docs/COMMUNICATION.md](docs/COMMUNICATION.md). Do not use hidden agent
 chat, email, GitHub comments, or local-only edits as a substitute for delivery.
 The human launches the second agent using [its prompt](docs/AGENT2_PROMPT.md).
-Use separate clones/worktrees beneath the workspace; never switch branches in a
-checkout another active agent is using. Do not spawn additional agents.
+The agents have independent workspaces. Each uses its own clone, Maylang source
+checkout, build outputs and authentication. No filesystem or credentials are
+shared; only committed and pushed repository content crosses between agents.
+Do not assume the other agent's absolute paths exist. Do not spawn additional agents.
 
 ## Ownership
 
