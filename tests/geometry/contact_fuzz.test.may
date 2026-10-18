@@ -1,0 +1,114 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/geometry/contact.may";
+
+/// Deterministic fuzzing of contact_convex on random convex pairs.
+let EPSILON: Float = 0.000001;
+let TAU: Float = 6.283185307179586;
+mut seed: Int = 424242;
+
+fun expect(value: Bool, label: Str) -> Nil {
+    if (not value) {
+        fail("FAIL: " + label + " (seed " + str(seed) + ")");
+    }
+    return;
+}
+
+/// Park-Miller minimal standard generator; uniform in [0, 1).
+fun random() -> Float {
+    seed = (seed * 48271) % 2147483647;
+    return float(seed) / 2147483647.0;
+}
+
+/// Points on an ellipse at increasing angles are convex in that order.
+fun random_convex(cx: Float, cy: Float) -> Polygon {
+    let count: Int = 3 + int(random() * 8.0);
+    let steps: List<Float> = [];
+    mut total: Float = 0.0;
+    for i: Int in 0..count {
+        let step: Float = 0.3 + random();
+        push(steps, step);
+        total += step;
+    }
+    let rx: Float = 0.5 + random() * 2.0;
+    let ry: Float = 0.5 + random() * 2.0;
+    let points: List<Vec2> = [];
+    mut angle: Float = random() * TAU;
+    for step: Float in steps {
+        angle += TAU * step / total;
+        push(points, Vec2(cx + rx * cos(angle), cy + ry * sin(angle)));
+    }
+    if (random() < 0.5) {
+        let reversed: List<Vec2> = [];
+        mut i: Int = count - 1;
+        while (i >= 0) {
+            push(reversed, points[i]);
+            i -= 1;
+        }
+        return Polygon(reversed);
+    }
+    return Polygon(points);
+}
+
+fun moved(shape: Polygon, offset: Vec2) -> Polygon {
+    let points: List<Vec2> = [];
+    for vertex: Vec2 in shape.vertices {
+        push(points, add(vertex, offset));
+    }
+    return Polygon(points);
+}
+
+/// Whether `point` lies inside every edge line of a convex outline, within `slack`.
+fun inside(shape: Polygon, point: Vec2, slack: Float) -> Bool {
+    let count: Int = len(shape.vertices);
+    mut winding: Float = 1.0;
+    if (signed_area(shape) < 0.0) {
+        winding = -1.0;
+    }
+    for i: Int in 0..count {
+        let from: Vec2 = shape.vertices[i];
+        let edge: Vec2 = subtract(shape.vertices[(i + 1) % count], from);
+        if (winding * cross(edge, subtract(point, from)) / sqrt(dot(edge, edge)) < -slack) {
+            return false;
+        }
+    }
+    return true;
+}
+
+mut overlaps: Int = 0;
+mut separates: Int = 0;
+mut invalids: Int = 0;
+for trial: Int in 0..1200 {
+    let cx: Float = (random() - 0.5) * 200.0;
+    let cy: Float = (random() - 0.5) * 200.0;
+    let a: Polygon = random_convex(cx, cy);
+    let b: Polygon = random_convex(cx + (random() - 0.5) * 6.0, cy + (random() - 0.5) * 6.0);
+    let result: ContactResult = contact_convex(a, b, EPSILON);
+    let swapped: ContactResult = contact_convex(b, a, EPSILON);
+    expect(swapped.status == result.status, "swapped status agrees");
+    if (result.status == "overlap") {
+        overlaps += 1;
+        expect(abs(swapped.depth - result.depth) < 0.000000001, "swapped depth agrees");
+        expect(abs(dot(result.normal, result.normal) - 1.0) < 0.000000000001, "unit normal");
+        expect(inside(a, result.point, 0.000000001) and inside(b, result.point, 0.000000001),
+            "contact point inside both");
+        let escaped: ContactResult = contact_convex(moved(a, scale(result.normal, result.depth + 2.0 * EPSILON)),
+            b, EPSILON);
+        expect(escaped.status == "separate", "moving by depth along the normal separates");
+        if (result.depth > 4.0 * EPSILON) {
+            let short: ContactResult = contact_convex(moved(a, scale(result.normal, result.depth - 3.0 * EPSILON)),
+                b, EPSILON);
+            expect(short.status == "overlap", "moving slightly less than depth still overlaps");
+        }
+    } else if (result.status == "separate") {
+        separates += 1;
+        expect(result.depth == 0.0 and result.normal.x == 0.0 and result.normal.y == 0.0, "separate zero fields");
+    } else {
+        expect(result.status == "invalid", "status is known");
+        invalids += 1;
+    }
+}
+expect(overlaps > 300 and separates > 100, "fuzz exercises both outcomes");
+expect(invalids < 10, "generated outlines are almost always valid");
+print("PASS: contact fuzz " + str(overlaps) + " overlaps, " + str(separates) + " separate, "
+    + str(invalids) + " invalid");
