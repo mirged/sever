@@ -1,0 +1,83 @@
+import "../../src/core/types.may";
+import "../../src/game/training.may";
+import "../../src/game/magic.may";
+
+mut magic_checks: Int = 0;
+fun expect_magic(value: Bool, label: Str) -> Nil {
+    if (not value) { fail("FAIL: " + label); }
+    magic_checks += 1;
+    return;
+}
+
+let room: Training = create_training();
+let magic: MagicState = create_magic(room);
+expect_magic(magic.selected == 0 and magic.book.mana == 100.0, "default arc and full mana");
+select_spell(magic, 4);
+select_spell(magic, -1); select_spell(magic, 5);
+expect_magic(magic.selected == 4, "ignore invalid selection without losing the current spell");
+let target: Vec2 = Vec2(-2.0, 0.65);
+aim_magic(room, magic, target);
+target.x = 40.0;
+expect_magic(magic.target.x == -2.0 and room.aim.x == 1.0, "own aim target while sharing blade direction");
+
+room.player.position = Vec2(-3.0, 7.5);
+select_spell(magic, 1);
+aim_magic(room, magic, Vec2(10.0, 7.5));
+cast_selected(room, magic);
+expect_magic(magic.book.casts == 1 and magic.book.mana == 75.0, "native adapter casts lance");
+expect_magic(room.cutter.cables == 2 and room.cutter.cuts == 0, "spell updates shared cable counters");
+expect_magic(not room.world.cables[0].intact and not room.world.cables[1].intact,
+    "lance releases both supports through the real world API");
+expect_magic(len(magic.blades) == 1 and magic.trail_ticks == 12, "successful cast records blade trail");
+tick_magic(magic);
+expect_magic(magic.book.cooldowns[1] == 44 and magic.book.mana == 75.25
+    and magic.trail_ticks == 11, "tick mana, cooldown and effects together");
+cast_selected(room, magic);
+expect_magic(magic.book.casts == 1 and room.cutter.cables == 2
+    and magic.status == "lance / cooldown", "rejected cast does not duplicate world counters");
+
+let hop: Training = create_training();
+let hopper: MagicState = create_magic(hop);
+select_spell(hopper, 3);
+aim_magic(hop, hopper, Vec2(-2.0, 0.65));
+cast_selected(hop, hopper);
+expect_magic(hop.player.position.x == -4.25 and not hop.player.grounded, "blink updates the actual player");
+expect_magic(len(hopper.blades) == 1 and hopper.blades[0].start.x == -6.0
+    and hopper.blades[0].end.x == -4.25, "blink trail records actual clearance-limited destination");
+select_spell(hopper, 1);
+aim_magic(hop, hopper, Vec2(-4.25, 9.0));
+cast_selected(hop, hopper);
+expect_magic(hopper.resonance_ticks == 30 and hopper.book.mana == 51.25,
+    "native adapter exposes cross-spell resonance");
+hop.player.finished = true;
+select_spell(hopper, 0);
+cast_selected(hop, hopper);
+expect_magic(hopper.book.casts == 2 and hopper.book.mana == 51.25,
+    "completion prevents casts and spending");
+
+let shattered: Training = create_training();
+shattered.player.position = Vec2(0.0, 0.65);
+let shards: MagicState = create_magic(shattered);
+select_spell(shards, 2);
+aim_magic(shattered, shards, Vec2(2.0, 2.2));
+cast_selected(shattered, shards);
+expect_magic(shattered.cutter.cuts == 5 and shattered.cutter.next_id == 110,
+    "spell shares the monotonic fragment ID allocator with ordinary cutting");
+expect_magic(len(shards.blades) == 3, "shatter retains all three blade effects");
+for tick: Int in 0..12 { tick_magic(shards); }
+expect_magic(shards.trail_ticks == 0, "spell trail expires in simulation ticks");
+let reset: MagicState = create_magic(create_training());
+expect_magic(reset.book.casts == 0 and reset.book.mana == 100.0 and reset.trail_ticks == 0,
+    "reset reconstructs full spell state");
+
+let demo: Training = create_training();
+let script: MagicState = create_magic(demo);
+for tick: Int in 0..600 {
+    demo_magic(demo, script);
+    step_training(demo, demo_controls(demo));
+    tick_magic(script);
+}
+expect_magic(script.book.casts == 3, "spell autoplay casts its three-spell sequence");
+expect_magic(demo.cutter.cuts > 0, "spell autoplay changes the room geometry");
+expect_magic(demo.player.finished, "spell autoplay reaches the exit");
+print("PASS: " + str(magic_checks) + " native spell adapter checks");

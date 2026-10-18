@@ -1,6 +1,8 @@
 import "ui" as ui;
 import "../core/types.may";
 import "../game/training.may";
+import "../game/magic.may" as casting;
+import "../spells/spells.may" as spell;
 import "projection.may";
 
 // Thin typed access to the existing native UI drawing adapter. No game logic in C.
@@ -21,6 +23,11 @@ fun rgb(red: Int, green: Int, blue: Int) -> Int {
 fun line(a: Vec2, b: Vec2, thickness: Int, color: Int) -> Nil {
     mui_line(int(a.x), int(a.y), int(b.x), int(b.y), thickness, color, 255);
     return;
+}
+
+fun cooldown_text(ticks: Int) -> Str {
+    let tenths: Int = int((float(ticks) + 5.0) / 6.0);
+    return str(int(float(tenths) / 10.0)) + "." + str(tenths % 10) + "s";
 }
 
 /// Convex scan conversion uses scalar intersections, without a pixel buffer.
@@ -68,7 +75,7 @@ fun grid(camera: Camera) -> Nil {
     return;
 }
 
-pub fun draw_scene(window: ui.Window, training: Training, paused: Bool) -> Nil {
+pub fun draw_scene(window: ui.Window, training: Training, grimoire: casting.MagicState, paused: Bool) -> Nil {
     let background: Int = rgb(16, 21, 23);
     let text: Int = rgb(230, 235, 228);
     let muted: Int = rgb(137, 155, 154);
@@ -82,22 +89,39 @@ pub fun draw_scene(window: ui.Window, training: Training, paused: Bool) -> Nil {
     mui_text(294, 42, "EXPERIMENT 001", 14, lime);
     mui_text(294, 66, "THE WORKSHOP", 22, text);
     mui_text(window.width - 240, 44, "PHYSICS / PLATFORMER", 12, muted);
-    mui_text(window.width - 240, 68, "CUTTING LAB    v0.2", 12, muted);
+    mui_text(window.width - 240, 68, "SPELL LAB      v0.3", 12, muted);
     mui_line(32, 128, window.width - 32, 128, 1, rgb(58, 70, 71), 255);
     mui_text(32, 174, "01 / THE CROSSING", 13, lime);
     mui_text(32, 213, "Make your", 23, text);
     mui_text(32, 244, "own way.", 23, text);
-    mui_text(32, 302, "Climb the platforms.", 12, muted);
-    mui_text(32, 324, "Reach the lit exit.", 12, muted);
-    mui_line(32, 370, 220, 370, 1, rgb(58, 70, 71), 255);
-    mui_text(32, 398, "CUTTER / " + training.cutter.status, 12, orange);
-    mui_text(32, 424, "Mouse aims. J severs.", 11, muted);
-    mui_text(32, 444, "3.5 m / finite blade", 11, muted);
-    mui_text(32, 468, "Dark foundations hold.", 10, muted);
-    mui_text(32, 512, "ATTEMPTS", 11, muted);
-    mui_text(32, 534, str(training.player.deaths + 1), 28, text);
-    mui_text(128, 512, "CUTS", 11, muted);
-    mui_text(128, 534, str(training.cutter.cuts), 28, text);
+    mui_text(32, 302, "WORLD / " + training.cutter.status, 11, orange);
+    mui_text(32, 324, "MOUSE AIM / J BLADE", 11, muted);
+    mui_line(32, 347, 220, 347, 1, rgb(58, 70, 71), 255);
+    mui_text(32, 363, grimoire.status, 11, rgb(185, 169, 255));
+    mui_text(32, 389, "MANA  " + str(int(grimoire.book.mana)) + " / 100", 13, text);
+    mui_rect(32, 414, 188, 4, 0, rgb(49, 61, 63));
+    mui_rect(32, 414, int(grimoire.book.mana * 1.88), 4, 0, rgb(185, 169, 255));
+    let catalogue: List<spell.SpellDef> = spell.spell_catalogue();
+    for slot: Int in 0..len(catalogue) {
+        let row: Int = 438 + slot * 33;
+        if (slot == grimoire.selected) {
+            mui_rect(24, row - 3, 204, 29, 2, rgb(37, 40, 48));
+            mui_rect(24, row - 3, 2, 29, 0, rgb(185, 169, 255));
+        }
+        mui_text(32, row, str(slot + 1) + " / " + catalogue[slot].name, 13,
+            if (slot == grimoire.selected) { text } else { muted });
+        let cooldown: Int = grimoire.book.cooldowns[slot];
+        let ready: Str = if (cooldown > 0) { cooldown_text(cooldown) }
+            else { str(int(catalogue[slot].mana_cost)) + " MP" };
+        mui_text(151, row + 2, ready, 10,
+            if (cooldown > 0 or grimoire.book.mana < catalogue[slot].mana_cost) { orange } else { muted });
+    }
+    mui_text(32, 611, if (grimoire.resonance_ticks > 0) { "RESONANCE / 25% REFUND" }
+        else { "1-5 SELECT / F CAST" }, 11, rgb(185, 169, 255));
+    mui_text(32, 644, "ATTEMPTS", 10, muted);
+    mui_text(128, 644, "CUTS", 10, muted);
+    mui_text(32, 663, str(training.player.deaths + 1), 25, text);
+    mui_text(128, 663, str(training.cutter.cuts), 25, text);
     mui_clip(camera.x, camera.y, camera.width, camera.height);
     mui_rect(camera.x, camera.y, camera.width, camera.height, 0, rgb(22, 29, 31));
     grid(camera);
@@ -125,6 +149,20 @@ pub fun draw_scene(window: ui.Window, training: Training, paused: Bool) -> Nil {
     if (training.cutter.trail_ticks > 0) {
         line(to_screen(camera, training.cutter.start), to_screen(camera, training.cutter.end), 3, orange);
     }
+    let target: Vec2 = to_screen(camera, grimoire.target);
+    let violet: Int = rgb(185, 169, 255);
+    mui_line(int(target.x) - 7, int(target.y), int(target.x) - 3, int(target.y), 1, violet, 255);
+    mui_line(int(target.x) + 3, int(target.y), int(target.x) + 7, int(target.y), 1, violet, 255);
+    mui_line(int(target.x), int(target.y) - 7, int(target.x), int(target.y) - 3, 1, violet, 255);
+    mui_line(int(target.x), int(target.y) + 3, int(target.x), int(target.y) + 7, 1, violet, 255);
+    if (grimoire.trail_ticks > 0) {
+        for blade: spell.Blade in grimoire.blades {
+            let start: Vec2 = to_screen(camera, blade.start);
+            let end: Vec2 = to_screen(camera, blade.end);
+            mui_line(int(start.x), int(start.y), int(end.x), int(end.y), 3, violet,
+                60 + grimoire.trail_ticks * 16);
+        }
+    }
     let door: Vec2 = to_screen(camera, Vec2(10.95, 5.65));
     let door_width: Int = int(camera.pixels_per_unit * 1.15);
     let door_height: Int = int(camera.pixels_per_unit * 2.05);
@@ -147,7 +185,7 @@ pub fun draw_scene(window: ui.Window, training: Training, paused: Bool) -> Nil {
         mui_text(camera.x + 44, camera.y + 72, "R / restart the workshop", 11, muted);
     }
     mui_line(32, window.height - 73, window.width - 32, window.height - 73, 1, rgb(58, 70, 71), 255);
-    mui_text(32, window.height - 48, "A / D  MOVE    SPACE  JUMP    MOUSE / J  CUT    P  PAUSE    R  RESET", 13, text);
+    mui_text(32, window.height - 48, "A/D MOVE   SPACE JUMP   J CUT   1-5 SPELL   F CAST   P PAUSE   R RESET", 13, text);
     mui_text(window.width - 244, window.height - 48, "NOTHING STAYS WHOLE.", 12, lime);
     if (window.headless) {
         if (mui_software_present() == 0) { fail("Cannot render workshop preview"); }

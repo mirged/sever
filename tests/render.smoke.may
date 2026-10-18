@@ -1,6 +1,7 @@
 import "ui" as ui;
 import "../src/core/types.may";
 import "../src/game/training.may";
+import "../src/game/magic.may" as casting;
 import "../src/render/projection.may";
 import "../src/render/canvas.may" as canvas;
 
@@ -12,7 +13,7 @@ fun expect_render(value: Bool, label: Str) -> Nil {
 let window: ui.Window = ui.open("sever render checks", 1280, 800, true);
 may {
     let training: Training = create_training();
-    canvas.draw_scene(window, training, false);
+    canvas.draw_scene(window, training, casting.create_magic(training), false);
     let camera: Camera = room_camera(1280, 800);
     let player: Vec2 = to_screen(camera, training.player.position);
     expect_render(ui.pixel(window, int(player.x), int(player.y)) == 14090061,
@@ -30,9 +31,21 @@ may {
     canvas.paint_polygon(camera, [triangle[2], triangle[1], triangle[0]], 65280, 65280);
     expect_render(ui.pixel(window, 400, 320) != interior, "render reversed winding");
     expect_render(triangle[0].x == 200.0, "rendering does not mutate vertices");
+    let grimoire: casting.MagicState = casting.create_magic(training);
+    canvas.draw_scene(window, training, grimoire, false);
+    expect_render(ui.pixel(window, 100, 415) == 12167679, "full mana bar is visible");
+    expect_render(ui.pixel(window, 25, 440) == 12167679, "selected spell has a visible marker");
+    let trail_sample: Vec2 = to_screen(camera, Vec2(-6.0, 2.65));
+    let before_trail: Int = ui.pixel(window, int(trail_sample.x), int(trail_sample.y));
+    casting.select_spell(grimoire, 1);
+    casting.aim_magic(training, grimoire, Vec2(-6.0, 9.0));
+    casting.cast_selected(training, grimoire);
+    canvas.draw_scene(window, training, grimoire, false);
+    expect_render(ui.pixel(window, int(trail_sample.x), int(trail_sample.y)) != before_trail,
+        "cast blade trail is visible in the room");
     ui.close(window);
 } otherwise {
     ui.close(window);
     fail(err.message);
 }
-print("PASS: 7 native rendering checks");
+print("PASS: 10 native rendering checks");
