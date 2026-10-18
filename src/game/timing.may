@@ -1,4 +1,5 @@
 import "../physics/step.may";
+import "../physics/body.may";
 
 pub struct StepClock {
     remainder: Float,
@@ -11,7 +12,7 @@ pub fun create_clock() -> StepClock {
 
 /// Clamp wall-clock discontinuities and cap catch-up at eight fixed ticks.
 pub fun advance_clock(timer: StepClock, elapsed: Float, paused: Bool) -> Int {
-    if (paused) {
+    if (paused or not bounded_number(elapsed, 1.0e100)) {
         timer.remainder = 0.0;
         return 0;
     }

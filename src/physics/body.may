@@ -1,0 +1,35 @@
+import "../core/types.may";
+import "../core/math.may";
+
+pub fun rotated(point: Vec2, angle: Float) -> Vec2 {
+    let cosine: Float = float(cos(angle));
+    let sine: Float = float(sin(angle));
+    return Vec2(point.x * cosine - point.y * sine,
+        point.x * sine + point.y * cosine);
+}
+
+pub fun body_point(body: Body, point: Vec2) -> Vec2 {
+    return add(body.position, rotated(point, body.angle));
+}
+
+pub fun local_point(body: Body, point: Vec2) -> Vec2 {
+    return rotated(subtract(point, body.position), -body.angle);
+}
+
+/// Fresh world-space vertices; transforming a body never edits its local shape.
+pub fun world_polygon(body: Body) -> Polygon {
+    let points: List<Vec2> = [];
+    let cosine: Float = float(cos(body.angle));
+    let sine: Float = float(sin(body.angle));
+    for point: Vec2 in body.shape.vertices {
+        push(points, Vec2(body.position.x + point.x * cosine - point.y * sine,
+            body.position.y + point.x * sine + point.y * cosine));
+    }
+    return Polygon(points);
+}
+
+/// Defend against the pinned runtime's unordered-comparison behavior too.
+pub fun bounded_number(value: Float, limit: Float) -> Bool {
+    if (value > limit or value < -limit) { return false; }
+    return value <= limit and value >= -limit;
+}

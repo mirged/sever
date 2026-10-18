@@ -1,0 +1,36 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/physics/body.may";
+import "../../src/game/timing.may";
+
+fun expect_body(value: Bool, label: Str) -> Nil {
+    if (not value) { fail("FAIL: " + label); }
+    return;
+}
+
+fun body_near(a: Float, b: Float) -> Bool {
+    return abs(a - b) < 0.000001;
+}
+
+let body: Body = Body(1, rectangle(2.0, 1.0), Vec2(3.0, -4.0),
+    Vec2(0.0, 0.0), 1.5707963267948966, 0.0, false, true, "test");
+let world: Vec2 = body_point(body, Vec2(2.0, 1.0));
+expect_body(body_near(world.x, 2.0) and body_near(world.y, -2.0), "rotate then translate");
+let restored: Vec2 = local_point(body, world);
+expect_body(body_near(restored.x, 2.0) and body_near(restored.y, 1.0), "inverse transform");
+let shape: Polygon = world_polygon(body);
+expect_body(len(shape.vertices) == 4, "keep vertex count");
+shape.vertices[0].x = 100.0;
+expect_body(body_near(body.shape.vertices[0].x, -1.0), "own transformed vertices");
+expect_body(bounded_number(-2.0, 3.0) and not bounded_number(4.0, 3.0), "finite range checks");
+let huge: Float = 1.0e300;
+let infinity: Float = huge * huge;
+let nan: Float = infinity - infinity;
+expect_body(not bounded_number(nan, 1.0e100), "reject NaN under pinned comparison logic");
+expect_body(not bounded_number(infinity, 1.0e100), "reject infinity");
+let timer: StepClock = create_clock();
+expect_body(advance_clock(timer, nan, false) == 0, "NaN elapsed produces no tick");
+expect_body(advance_clock(timer, infinity, false) == 0, "infinite elapsed produces no tick");
+expect_body(advance_clock(timer, 1.0 / 60.0, false) == 1,
+    "bad elapsed time does not poison the accumulator");
+print("PASS: 10 body-transform and non-finite timing checks");

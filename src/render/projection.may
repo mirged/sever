@@ -1,4 +1,5 @@
 import "../core/types.may";
+import "../physics/body.may";
 
 pub struct Camera {
     x: Int,
@@ -32,12 +33,8 @@ pub fun to_world(camera: Camera, point: Vec2) -> Vec2 {
 
 pub fun project_body(camera: Camera, body: Body) -> List<Vec2> {
     let vertices: List<Vec2> = [];
-    let cosine: Float = float(cos(body.angle));
-    let sine: Float = float(sin(body.angle));
-    for vertex: Vec2 in body.shape.vertices {
-        push(vertices, to_screen(camera, Vec2(
-            vertex.x * cosine - vertex.y * sine + body.position.x,
-            vertex.x * sine + vertex.y * cosine + body.position.y)));
+    for vertex: Vec2 in world_polygon(body).vertices {
+        push(vertices, to_screen(camera, vertex));
     }
     return vertices;
 }
