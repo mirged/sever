@@ -21,44 +21,6 @@ fun copy_point(point: Vec2) -> Vec2 {
     return Vec2(point.x, point.y);
 }
 
-/// Strict convexity with a world-distance margin: every edge is longer than
-/// epsilon, and every vertex not on an edge lies more than epsilon inside that
-/// edge's supporting line. Near-collinear, duplicate, reflex and
-/// self-intersecting outlines therefore fail. Either winding is accepted.
-fun strictly_convex(shape: Polygon, epsilon: Float) -> Bool {
-    let count: Int = len(shape.vertices);
-    if (count < 3) {
-        return false;
-    }
-    for vertex: Vec2 in shape.vertices {
-        if (not finite_point(vertex)) {
-            return false;
-        }
-    }
-    let area: Float = signed_area(shape);
-    mut winding: Float = 1.0;
-    if (area < 0.0) {
-        winding = -1.0;
-    }
-    for i: Int in 0..count {
-        let from: Vec2 = shape.vertices[i];
-        let edge: Vec2 = subtract(shape.vertices[(i + 1) % count], from);
-        let edge_length: Float = vector_length(edge);
-        if (not (edge_length > epsilon)) {
-            return false;
-        }
-        for j: Int in 0..count {
-            if (j != i and j != (i + 1) % count) {
-                let inside: Float = winding * cross(edge, subtract(shape.vertices[j], from)) / edge_length;
-                if (not (inside > epsilon)) {
-                    return false;
-                }
-            }
-        }
-    }
-    return true;
-}
-
 /// -1, 0 or 1: which side of the blade line a signed distance falls on.
 fun side(distance: Float, epsilon: Float) -> Int {
     if (distance > epsilon) {
@@ -122,7 +84,7 @@ pub fun split_convex(shape: Polygon, start: Vec2, end: Vec2, epsilon: Float) -> 
     if (not (finite_coordinate(epsilon) and epsilon > 0.0)) {
         return invalid();
     }
-    if (not (finite_point(start) and finite_point(end) and strictly_convex(shape, epsilon))) {
+    if (not (finite_point(start) and finite_point(end) and valid_convex(shape, epsilon))) {
         return invalid();
     }
     let blade: Vec2 = subtract(end, start);
@@ -196,7 +158,7 @@ pub fun split_convex(shape: Polygon, start: Vec2, end: Vec2, epsilon: Float) -> 
 
     let left_piece: Polygon = Polygon(left);
     let right_piece: Polygon = Polygon(right);
-    if (not (strictly_convex(left_piece, epsilon) and strictly_convex(right_piece, epsilon))) {
+    if (not (valid_convex(left_piece, epsilon) and valid_convex(right_piece, epsilon))) {
         return miss();
     }
     return SliceResult("split", [left_piece, right_piece]);

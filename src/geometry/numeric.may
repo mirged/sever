@@ -22,3 +22,41 @@ pub fun finite_point(point: Vec2) -> Bool {
 pub fun vector_length(value: Vec2) -> Float {
     return sqrt(dot(value, value));
 }
+
+/// Strict convexity with a world-distance margin: every edge is longer than
+/// epsilon, and every vertex not on an edge lies more than epsilon inside that
+/// edge's supporting line. Near-collinear, duplicate, reflex and
+/// self-intersecting outlines therefore fail. Either winding is accepted.
+pub fun valid_convex(shape: Polygon, epsilon: Float) -> Bool {
+    let count: Int = len(shape.vertices);
+    if (count < 3) {
+        return false;
+    }
+    for vertex: Vec2 in shape.vertices {
+        if (not finite_point(vertex)) {
+            return false;
+        }
+    }
+    let area: Float = signed_area(shape);
+    mut winding: Float = 1.0;
+    if (area < 0.0) {
+        winding = -1.0;
+    }
+    for i: Int in 0..count {
+        let from: Vec2 = shape.vertices[i];
+        let edge: Vec2 = subtract(shape.vertices[(i + 1) % count], from);
+        let edge_length: Float = vector_length(edge);
+        if (not (edge_length > epsilon)) {
+            return false;
+        }
+        for j: Int in 0..count {
+            if (j != i and j != (i + 1) % count) {
+                let inside: Float = winding * cross(edge, subtract(shape.vertices[j], from)) / edge_length;
+                if (not (inside > epsilon)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
