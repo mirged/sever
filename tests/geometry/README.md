@@ -21,3 +21,8 @@ this directory through the `may.json` test target.
   blades. It checks area and winding, that every piece vertex lies inside the
   parent and on its own side of the blade, and that re-cutting a piece along
   the same blade misses.
+- `mass.test.may` checks `mass_properties` against closed forms (rectangle,
+  right triangle, equilateral triangle) in both windings and translated to
+  `1e6`. It checks that cuts conserve area, centroid and parallel-axis inertia,
+  covering 39 cuts including a 36-blade sweep. It also checks that `recentred`
+  returns fresh vertices, and that each failure reports its exact reason.
