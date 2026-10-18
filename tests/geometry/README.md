@@ -31,3 +31,8 @@ this directory through the `may.json` test target.
   overlaps. It also covers touching, gaps, epsilon-scale penetration, a
   bounding-box false positive, every winding pair, swapped operands, invalid
   input and immutability.
+- `contact_fuzz.test.may` runs 1200 seeded random convex pairs, in both
+  windings and up to 100 from the origin. Moving A by `depth + 2ε` along
+  the normal must separate the pair; moving it by `depth − 3ε` must still
+  overlap. Swapped operands must agree on status and depth, and the contact
+  point must lie inside both outlines.
