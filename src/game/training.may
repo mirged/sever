@@ -1,0 +1,158 @@
+import "../core/types.may";
+import "../core/math.may";
+import "../physics/step.may";
+
+pub struct Player {
+    position: Vec2,
+    velocity: Vec2,
+    grounded: Bool,
+    finished: Bool,
+    deaths: Int
+}
+
+pub struct Controls {
+    horizontal: Int,
+    jump: Bool
+}
+
+pub struct Training {
+    world: World,
+    player: Player
+}
+
+/// The movement lab currently uses axis-aligned static rectangles only.
+pub struct PlatformBounds {
+    left: Float,
+    right: Float,
+    bottom: Float,
+    top: Float
+}
+
+pub fun bounds(body: Body) -> PlatformBounds {
+    mut left: Float = body.shape.vertices[0].x;
+    mut right: Float = left;
+    mut bottom: Float = body.shape.vertices[0].y;
+    mut top: Float = bottom;
+    for vertex: Vec2 in body.shape.vertices {
+        left = float(min(left, vertex.x));
+        right = float(max(right, vertex.x));
+        bottom = float(min(bottom, vertex.y));
+        top = float(max(top, vertex.y));
+    }
+    return PlatformBounds(left + body.position.x, right + body.position.x,
+        bottom + body.position.y, top + body.position.y);
+}
+
+fun platform(id: Int, x: Float, top: Float, width: Float, height: Float) -> Body {
+    return Body(id, rectangle(width, height), Vec2(x, top - height * 0.5),
+        Vec2(0.0, 0.0), 0.0, 0.0, false, true, "concrete");
+}
+
+pub fun create_training() -> Training {
+    let bodies: List<Body> = [
+        platform(10, -5.0, 0.0, 10.0, 1.0),
+        platform(11, 11.0, 0.0, 10.0, 1.0),
+        platform(12, -2.0, 1.2, 3.6, 0.4),
+        platform(13, 2.0, 2.4, 3.0, 0.4),
+        platform(14, 6.0, 3.6, 3.0, 0.4),
+        platform(15, 10.5, 3.6, 4.0, 0.4),
+        platform(16, 1.0, 6.2, 5.0, 0.35)
+    ];
+    let cables: List<Cable> = [
+        Cable(10, Vec2(-1.0, 8.0), Vec2(-1.0, 6.2), 16, true),
+        Cable(11, Vec2(3.0, 8.0), Vec2(3.0, 6.2), 16, true)
+    ];
+    return Training(World(bodies, cables, Vec2(0.0, -24.0), 0),
+        Player(Vec2(-6.0, 0.65), Vec2(0.0, 0.0), true, false, 0));
+}
+
+fun overlaps(a0: Float, a1: Float, b0: Float, b1: Float) -> Bool {
+    return a0 < b1 - 0.000001 and a1 > b0 + 0.000001;
+}
+
+fun move_horizontal(player: Player, body: Body, previous_x: Float) -> Nil {
+    let box: PlatformBounds = bounds(body);
+    if (not overlaps(player.position.y - 0.65, player.position.y + 0.65,
+            box.bottom, box.top)) {
+        return;
+    }
+    if (player.velocity.x > 0.0 and previous_x + 0.3 <= box.left + 0.000001
+            and player.position.x + 0.3 > box.left) {
+        player.position.x = box.left - 0.3;
+        player.velocity.x = 0.0;
+    } else if (player.velocity.x < 0.0 and previous_x - 0.3 >= box.right - 0.000001
+            and player.position.x - 0.3 < box.right) {
+        player.position.x = box.right + 0.3;
+        player.velocity.x = 0.0;
+    }
+    return;
+}
+
+fun move_vertical(player: Player, body: Body, previous_y: Float) -> Nil {
+    let box: PlatformBounds = bounds(body);
+    if (not overlaps(player.position.x - 0.3, player.position.x + 0.3,
+            box.left, box.right)) {
+        return;
+    }
+    if (player.velocity.y < 0.0 and previous_y - 0.65 >= box.top - 0.000001
+            and player.position.y - 0.65 < box.top) {
+        player.position.y = box.top + 0.65;
+        player.velocity.y = 0.0;
+        player.grounded = true;
+    } else if (player.velocity.y > 0.0 and previous_y + 0.65 <= box.bottom + 0.000001
+            and player.position.y + 0.65 > box.bottom) {
+        player.position.y = box.bottom - 0.65;
+        player.velocity.y = 0.0;
+    }
+    return;
+}
+
+/// One fixed tick, with four contact substeps and no variable timestep input.
+pub fun step_training(training: Training, input: Controls) -> Nil {
+    let player: Player = training.player;
+    training.world.tick += 1;
+    if (player.finished) {
+        return;
+    }
+    player.velocity.x = float(max(-1, min(1, input.horizontal))) * 5.5;
+    if (input.jump and player.grounded) {
+        player.velocity.y = 9.5;
+        player.grounded = false;
+    }
+    let dt: Float = fixed_dt() * 0.25;
+    for substep: Int in 0..4 {
+        let previous_x: Float = player.position.x;
+        player.position.x += player.velocity.x * dt;
+        for body: Body in training.world.bodies {
+            if (not body.dynamic) {
+                move_horizontal(player, body, previous_x);
+            }
+        }
+        let previous_y: Float = player.position.y;
+        player.velocity.y = float(max(-20.0, player.velocity.y + training.world.gravity.y * dt));
+        player.position.y += player.velocity.y * dt;
+        player.grounded = false;
+        for body: Body in training.world.bodies {
+            if (not body.dynamic) {
+                move_vertical(player, body, previous_y);
+            }
+        }
+    }
+    if (player.position.y < -5.0 or player.position.x < -11.0 or player.position.x > 17.0) {
+        player.position = Vec2(-6.0, 0.65);
+        player.velocity = Vec2(0.0, 0.0);
+        player.grounded = true;
+        player.deaths += 1;
+    }
+    if (player.position.x > 10.8 and player.position.x < 12.3
+            and player.position.y > 3.8 and player.position.y < 5.8) {
+        player.finished = true;
+        player.velocity = Vec2(0.0, 0.0);
+    }
+    return;
+}
+
+/// A repeatable traversal used by headless previews and end-to-end checks.
+pub fun demo_controls(training: Training) -> Controls {
+    return Controls(1, training.player.grounded and training.player.position.x < 7.8);
+}

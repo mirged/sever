@@ -8,12 +8,20 @@
 
 ## 1 — The first cut (Agent 2)
 
+Completed as a pure geometry library and reviewed by Agent 1. Six combined
+Maylang suites pass, including 173 geometry checks, 49 evidence rows and 2012
+conservation splits. Gameplay binding and physical contacts remain in milestone 2.
+
 Split a convex polygon using a finite blade segment. Produce two valid convex
 pieces only when the blade traverses the interior. Handle winding, tolerances,
 vertex hits, grazing, parallel edges and invalid shapes. Preserve area and
 prove it with deterministic tests. Keep geometry free of rendering and FFI.
 
 ## 2 — The workshop (Agent 1)
+
+Completed independently of the cutting kernel: native UI canvas, fitted room
+camera, bounded fixed-step accumulator, keyboard run/jump, pause/focus behavior,
+reset, static rectangle contacts, an exit, and headless/native autoplay previews.
 
 Native Maylang UI window, fixed-step accumulator, keyboard movement/jump,
 blade aiming, player/world collision, camera and reset. Integrate the geometry

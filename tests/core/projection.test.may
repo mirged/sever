@@ -1,0 +1,28 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/render/projection.may";
+
+fun expect_projection(value: Bool, label: Str) -> Nil {
+    if (not value) { fail("FAIL: " + label); }
+    return;
+}
+
+fun projection_near(a: Float, b: Float) -> Bool {
+    return a - b > -0.000001 and a - b < 0.000001;
+}
+
+let camera: Camera = room_camera(1280, 800);
+let center: Vec2 = to_screen(camera, camera.center);
+expect_projection(projection_near(center.x, float(camera.x) + float(camera.width) * 0.5), "camera horizontal center");
+let above: Vec2 = to_screen(camera, Vec2(2.0, 3.8));
+expect_projection(above.y < center.y, "world Y up becomes screen Y down");
+let original: Vec2 = Vec2(-3.75, 1.25);
+let restored: Vec2 = to_world(camera, to_screen(camera, original));
+expect_projection(projection_near(original.x, restored.x) and projection_near(original.y, restored.y), "projection round trip");
+let body: Body = Body(1, rectangle(2.0, 1.0), Vec2(3.0, 2.0),
+    Vec2(0.0, 0.0), 1.5707963267948966, 0.0, false, true, "test");
+let corners: List<Vec2> = project_body(camera, body);
+let first: Vec2 = to_world(camera, corners[0]);
+expect_projection(projection_near(first.x, 3.5) and projection_near(first.y, 1.0), "rotate local vertices before translation");
+expect_projection(projection_near(body.shape.vertices[0].x, -1.0), "projection does not mutate model");
+print("PASS: 5 projection checks");

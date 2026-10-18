@@ -4,6 +4,17 @@
     "default": "sever",
     "targets": {
         "sever": {"kind": "app", "entry": "main.may"},
+        "ui": {
+            "kind": "native",
+            "inputs": ["{stdlib}/ui/native"],
+            "outputs": ["libmayui.so"],
+            "command": ["cc", "-O2", "-fPIC", "-shared",
+                "{stdlib}/ui/native/draw.c", "{stdlib}/ui/native/sokol.c",
+                "-o", "{out}/libmayui.so", "-lX11", "-lXi", "-lXcursor",
+                "-lGL", "-ldl", "-pthread", "-lm"]
+        },
+        "workshop": {"kind": "app", "entry": "desktop.may", "depends": ["ui"]},
+        "render-check": {"kind": "app", "entry": "tests/render.smoke.may", "depends": ["ui"]},
         "tests": {"kind": "test", "root": "tests"}
     },
     "dependencies": {},

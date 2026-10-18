@@ -1,0 +1,109 @@
+import "ui" as ui;
+import "src/game/training.may";
+import "src/game/timing.may";
+import "src/render/canvas.may" as canvas;
+
+fun run_workshop() -> Nil {
+    let argv: List<Str> = args();
+    mut headless: Bool = false;
+    mut demo: Bool = false;
+    mut limit: Int = 0;
+    mut snapshot: Str = "";
+    mut report: Str = "";
+    mut index: Int = 1;
+    while (index < len(argv)) {
+        let option: Str = argv[index];
+        if (option == "--help") {
+            print("sever / movement lab\nA/D or arrows: move. Space/W/Up: jump. P: pause. R: reset. Esc: close.\nOptions: --headless --demo --ticks 1..100000 --snapshot PATH --report PATH\nCutting is not available in this movement milestone.");
+            return;
+        } else if (option == "--headless") { headless = true; }
+        else if (option == "--demo") { demo = true; }
+        else if ((option == "--ticks" or option == "--snapshot" or option == "--report")
+                and index + 1 < len(argv)) {
+            index += 1;
+            if (option == "--ticks") {
+                limit = int(argv[index]);
+                if (limit < 1 or limit > 100000) { fail("Tick limit must be 1..100000"); }
+            }
+            else if (option == "--snapshot") { snapshot = argv[index]; }
+            else { report = argv[index]; }
+        } else { fail("Unknown or incomplete option: " + option); }
+        index += 1;
+    }
+    if (limit < 0 or limit > 100000) { fail("Tick limit must be 1..100000"); }
+    if (headless and limit == 0) { limit = 600; }
+    print("Opening workshop surface...");
+    let window: ui.Window = ui.open("sever / the workshop", 1280, 800, headless);
+    print("Renderer:", ui.renderer(window));
+    let started: Float = float(clock());
+    mut rendered_frames: Int = 0;
+    mut training: Training = create_training();
+    mut timer: StepClock = create_clock();
+    mut paused: Bool = false;
+    may {
+        if (headless) {
+            for tick: Int in 0..limit {
+                step_training(training, if (demo) { demo_controls(training) } else { Controls(0, false) });
+            }
+            canvas.draw_scene(window, training, false);
+            rendered_frames = 1;
+        } else {
+            mut previous: Float = float(clock());
+            mut jump_queued: Bool = false;
+            mut running: Bool = true;
+            mut next_report: Int = 60;
+            while (running) {
+                let event: ui.Event = ui.poll_for(window, 8);
+                if (event.kind == "close" or ui.key_pressed(window, 256)) { break; }
+                let focused: Bool = demo or ui.focused(window);
+                let reset: Bool = ui.key_pressed(window, 82);
+                let toggle_pause: Bool = ui.key_pressed(window, 80);
+                let space: Bool = ui.key_pressed(window, 32);
+                let up: Bool = ui.key_pressed(window, 265);
+                let w: Bool = ui.key_pressed(window, 87);
+                if (focused and reset) {
+                    training = create_training();
+                    timer = create_clock();
+                    paused = false;
+                    jump_queued = false;
+                }
+                if (focused and toggle_pause) { paused = not paused; }
+                if (focused and (space or up or w)) { jump_queued = true; }
+                let now: Float = float(clock());
+                let ticks: Int = advance_clock(timer, now - previous, paused or not focused);
+                previous = now;
+                if (paused or not focused) { jump_queued = false; }
+                mut direction: Int = 0;
+                if (ui.key_down(window, 65) or ui.key_down(window, 263)) { direction -= 1; }
+                if (ui.key_down(window, 68) or ui.key_down(window, 262)) { direction += 1; }
+                for tick: Int in 0..ticks {
+                    step_training(training, if (demo) { demo_controls(training) }
+                        else { Controls(direction, jump_queued) });
+                    jump_queued = false;
+                }
+                canvas.draw_scene(window, training, paused or not focused);
+                rendered_frames += 1;
+                if (limit > 0 and training.world.tick >= next_report) {
+                    print("Workshop tick:", training.world.tick);
+                    next_report += 60;
+                }
+                if (limit > 0 and training.world.tick >= limit) { running = false; }
+            }
+        }
+        if (snapshot != "") { ui.snapshot(window, snapshot); }
+        if (report != "") {
+            write_file(report, json_stringify({"ticks": training.world.tick,
+                "finished": training.player.finished, "deaths": training.player.deaths,
+                "x": training.player.position.x, "y": training.player.position.y,
+                "renderer": ui.renderer(window), "dropped_seconds": timer.dropped_seconds,
+                "frames": rendered_frames, "wall_seconds": float(clock()) - started}) + "\n");
+        }
+        ui.close(window);
+    } otherwise {
+        ui.close(window);
+        fail(err.message);
+    }
+    return;
+}
+
+may { run_workshop(); } otherwise { print(err.message); exit(1); }

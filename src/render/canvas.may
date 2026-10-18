@@ -1,0 +1,143 @@
+import "ui" as ui;
+import "../core/types.may";
+import "../game/training.may";
+import "projection.may";
+
+// Thin typed access to the existing native UI drawing adapter. No game logic in C.
+extern "libmayui.so" {
+    fun mui_surface(width: Int, height: Int) -> Int;
+    fun mui_clip(x: Int, y: Int, width: Int, height: Int) -> Void;
+    fun mui_rect(x: Int, y: Int, width: Int, height: Int, radius: Int, color: Int) -> Void;
+    fun mui_line(ax: Int, ay: Int, bx: Int, by: Int, thickness: Int, color: Int, opacity: Int) -> Void;
+    fun mui_text(x: Int, y: Int, text: Str, size: Int, color: Int) -> Void;
+    fun mui_present() -> Void;
+    fun mui_software_present() -> Int;
+}
+
+fun rgb(red: Int, green: Int, blue: Int) -> Int {
+    return red * 65536 + green * 256 + blue;
+}
+
+fun line(a: Vec2, b: Vec2, thickness: Int, color: Int) -> Nil {
+    mui_line(int(a.x), int(a.y), int(b.x), int(b.y), thickness, color, 255);
+    return;
+}
+
+/// Convex scan conversion uses scalar intersections, without a pixel buffer.
+pub fun paint_polygon(camera: Camera, vertices: List<Vec2>, color: Int, outline: Int) -> Nil {
+    if (len(vertices) < 3) { return; }
+    mui_clip(camera.x, camera.y, camera.width, camera.height);
+    mut low: Float = vertices[0].y;
+    mut high: Float = low;
+    for vertex: Vec2 in vertices {
+        low = float(min(low, vertex.y));
+        high = float(max(high, vertex.y));
+    }
+    let first: Int = int(max(camera.y, int(low)));
+    let last: Int = int(min(camera.y + camera.height, int(high) + 1));
+    for y: Int in first..last {
+        let scan: Float = float(y) + 0.5;
+        mut left: Float = 100000.0;
+        mut right: Float = -100000.0;
+        for i: Int in 0..len(vertices) {
+            let a: Vec2 = vertices[i];
+            let b: Vec2 = vertices[(i + 1) % len(vertices)];
+            if ((a.y <= scan and b.y > scan) or (b.y <= scan and a.y > scan)) {
+                let x: Float = a.x + (scan - a.y) * (b.x - a.x) / (b.y - a.y);
+                left = float(min(left, x));
+                right = float(max(right, x));
+            }
+        }
+        if (right > left) { mui_line(int(left), y, int(right), y, 1, color, 255); }
+    }
+    for i: Int in 0..len(vertices) {
+        line(vertices[i], vertices[(i + 1) % len(vertices)], 1, outline);
+    }
+    return;
+}
+
+fun grid(camera: Camera) -> Nil {
+    for x: Int in -12..19 {
+        line(to_screen(camera, Vec2(float(x), -5.0)),
+            to_screen(camera, Vec2(float(x), 10.0)), 1, rgb(34, 42, 44));
+    }
+    for y: Int in -5..11 {
+        line(to_screen(camera, Vec2(-12.0, float(y))),
+            to_screen(camera, Vec2(19.0, float(y))), 1, rgb(34, 42, 44));
+    }
+    return;
+}
+
+pub fun draw_scene(window: ui.Window, training: Training, paused: Bool) -> Nil {
+    let background: Int = rgb(16, 21, 23);
+    let text: Int = rgb(230, 235, 228);
+    let muted: Int = rgb(137, 155, 154);
+    let lime: Int = rgb(214, 255, 77);
+    let orange: Int = rgb(255, 145, 77);
+    let camera: Camera = room_camera(window.width, window.height);
+    if (mui_surface(window.width, window.height) == 0) { fail("Cannot prepare workshop canvas"); }
+    mui_rect(0, 0, window.width, window.height, 0, background);
+    mui_text(32, 20, "sever", 64, text);
+    mui_line(255, 30, 225, 100, 5, lime, 255);
+    mui_text(294, 42, "EXPERIMENT 001", 14, lime);
+    mui_text(294, 66, "THE WORKSHOP", 22, text);
+    mui_text(window.width - 240, 44, "PHYSICS / PLATFORMER", 12, muted);
+    mui_text(window.width - 240, 68, "MOVEMENT LAB   v0.1", 12, muted);
+    mui_line(32, 128, window.width - 32, 128, 1, rgb(58, 70, 71), 255);
+    mui_text(32, 174, "01 / THE CROSSING", 13, lime);
+    mui_text(32, 213, "Make your", 23, text);
+    mui_text(32, 244, "own way.", 23, text);
+    mui_text(32, 302, "Climb the platforms.", 12, muted);
+    mui_text(32, 324, "Reach the lit exit.", 12, muted);
+    mui_line(32, 370, 220, 370, 1, rgb(58, 70, 71), 255);
+    mui_text(32, 398, "CUTTER / OFFLINE", 12, orange);
+    mui_text(32, 424, "Movement comes first.", 11, muted);
+    mui_text(32, 444, "Cutting arrives next.", 11, muted);
+    mui_text(32, 512, "ATTEMPTS", 11, muted);
+    mui_text(32, 534, str(training.player.deaths + 1), 28, text);
+    mui_text(128, 512, "TICKS", 11, muted);
+    mui_text(128, 534, str(training.world.tick), 28, text);
+    mui_clip(camera.x, camera.y, camera.width, camera.height);
+    mui_rect(camera.x, camera.y, camera.width, camera.height, 0, rgb(22, 29, 31));
+    grid(camera);
+    for cable: Cable in training.world.cables {
+        if (cable.intact) {
+            line(to_screen(camera, cable.anchor_a), to_screen(camera, cable.anchor_b), 2, muted);
+        }
+    }
+    for body: Body in training.world.bodies {
+        paint_polygon(camera, project_body(camera, body),
+            if (body.id == 16) { rgb(67, 74, 57) } else { rgb(49, 61, 63) },
+            if (body.id == 16) { rgb(171, 189, 127) } else { rgb(113, 136, 135) });
+    }
+    let door: Vec2 = to_screen(camera, Vec2(10.95, 5.65));
+    let door_width: Int = int(camera.pixels_per_unit * 1.15);
+    let door_height: Int = int(camera.pixels_per_unit * 2.05);
+    mui_rect(int(door.x), int(door.y), door_width, door_height, 0, rgb(54, 73, 33));
+    mui_line(int(door.x), int(door.y), int(door.x), int(door.y) + door_height, 3, lime, 255);
+    mui_line(int(door.x), int(door.y), int(door.x) + door_width, int(door.y), 3, lime, 255);
+    mui_text(int(door.x) - 2, int(door.y) - 26, "EXIT", 12, lime);
+    let player: Vec2 = to_screen(camera, Vec2(training.player.position.x - 0.3,
+        training.player.position.y + 0.65));
+    let player_width: Int = int(camera.pixels_per_unit * 0.6);
+    let player_height: Int = int(camera.pixels_per_unit * 1.3);
+    mui_rect(int(player.x) + 3, int(player.y) + 4, player_width, player_height, 2, rgb(12, 18, 19));
+    mui_rect(int(player.x), int(player.y), player_width, player_height, 2, lime);
+    mui_rect(int(player.x) + 4, int(player.y) + 8, int(max(3, player_width - 7)), 5, 0, background);
+    mui_clip(0, 0, window.width, window.height);
+    if (training.player.finished or paused) {
+        let banner: Str = if (training.player.finished) { "CROSSING COMPLETE" } else { "PAUSED" };
+        mui_rect(camera.x + 24, camera.y + 22, camera.width - 48, 72, 0, background);
+        mui_text(camera.x + 44, camera.y + 39, banner, 24, lime);
+        mui_text(camera.x + 44, camera.y + 72, "R / restart the workshop", 11, muted);
+    }
+    mui_line(32, window.height - 73, window.width - 32, window.height - 73, 1, rgb(58, 70, 71), 255);
+    mui_text(32, window.height - 48, "A / D  MOVE     SPACE  JUMP     P  PAUSE     R  RESET", 13, text);
+    mui_text(window.width - 244, window.height - 48, "NOTHING STAYS WHOLE.", 12, lime);
+    if (window.headless) {
+        if (mui_software_present() == 0) { fail("Cannot render workshop preview"); }
+    } else {
+        mui_present();
+    }
+    return;
+}

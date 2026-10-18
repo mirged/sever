@@ -31,6 +31,8 @@ def environment():
         env[name] = str(directory)
     env["MAYC"] = str(COMPILER)
     env["MAYLANG_STDLIB"] = str(inside(SOURCE / "stdlib"))
+    env["MAYUI_FONT"] = str(inside(ROOT / "assets/fonts/IBMPlexMono-Regular.ttf"))
+    inside(ROOT / "build").mkdir(parents=True, exist_ok=True)
     env["GIT_CONFIG_NOSYSTEM"] = "1"
     config = inside(TOOLS / "gitconfig")
     config.touch(exist_ok=True)
@@ -69,6 +71,9 @@ def main():
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
         raise ValueError("Usage: python3 tools/dev.py bootstrap|check|test|run|build|tasks [args]")
     action = sys.argv[1]
+    for index, argument in enumerate(sys.argv[2:], 2):
+        if argument in ("--snapshot", "--report") and index + 1 < len(sys.argv):
+            inside(ROOT / sys.argv[index + 1])
     if action == "bootstrap":
         bootstrap()
         return
