@@ -2,7 +2,7 @@
 from copy import deepcopy
 import unittest
 
-from tools.mailbox import validate
+from tools.mailbox import unacknowledged, validate
 
 
 MESSAGE = {
@@ -18,6 +18,20 @@ ENVELOPE = {
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_inbox_retains_unprocessed_message_without_acknowledging_it(self):
+        mailbox = deepcopy(ENVELOPE)
+        before = deepcopy(mailbox)
+        self.assertEqual([m["id"] for m in unacknowledged(mailbox, 0)], ["agent1-0001"])
+        self.assertEqual(mailbox, before)
+
+    def test_inbox_does_not_repeat_processed_messages(self):
+        self.assertEqual(unacknowledged(deepcopy(ENVELOPE), 1), [])
+
+    def test_inbox_rejects_impossible_acknowledgments(self):
+        for acknowledgment in (-1, 2, True):
+            with self.subTest(acknowledgment=acknowledgment), self.assertRaises(ValueError):
+                unacknowledged(deepcopy(ENVELOPE), acknowledgment)
+
     def rejected(self, change):
         value = deepcopy(ENVELOPE)
         change(value)

@@ -75,6 +75,12 @@ def filename(sender):
     return f"messages/{sender}_to_{recipient}.json"
 
 
+def unacknowledged(mailbox, acknowledged):
+    if type(acknowledged) is not int or not 0 <= acknowledged <= mailbox["last_sequence"]:
+        raise ValueError("Acknowledgment is outside the fetched peer history")
+    return [message for message in mailbox["messages"] if message["sequence"] > acknowledged]
+
+
 def git_environment():
     env = os.environ.copy()
     workspace = ROOT.parent
@@ -99,7 +105,7 @@ def main():
         for sender in ("agent1", "agent2"):
             validate(json.loads((ROOT / filename(sender)).read_text()), sender)
         print("PASS: both mailboxes match schema and sequence rules")
-    elif len(sys.argv) == 3 and sys.argv[1] == "read" and sys.argv[2] in ("agent1", "agent2"):
+    elif len(sys.argv) == 3 and sys.argv[1] in ("read", "inbox") and sys.argv[2] in ("agent1", "agent2"):
         sender = sys.argv[2]
         env = git_environment()
         subprocess.run(["git", "-c", "credential.helper=", "-c",
@@ -108,9 +114,16 @@ def main():
                        cwd=ROOT, env=env, check=True)
         raw = subprocess.check_output(["git", "show", f"origin/{sender}:{filename(sender)}"],
                                       cwd=ROOT, env=env, text=True)
-        print(json.dumps(validate(json.loads(raw), sender), indent=4))
+        mailbox = validate(json.loads(raw), sender)
+        if sys.argv[1] == "inbox":
+            own = validate(json.loads((ROOT / filename(mailbox["to"])).read_text()), mailbox["to"])
+            print(json.dumps({"sender": sender, "acknowledged": own["ack_sequence"],
+                              "last_sequence": mailbox["last_sequence"],
+                              "pending": unacknowledged(mailbox, own["ack_sequence"])}, indent=4))
+        else:
+            print(json.dumps(mailbox, indent=4))
     else:
-        raise ValueError("Usage: python3 tools/mailbox.py validate | read agent1|agent2")
+        raise ValueError("Usage: python3 tools/mailbox.py validate | read|inbox agent1|agent2")
 
 
 if __name__ == "__main__":

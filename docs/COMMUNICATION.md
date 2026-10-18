@@ -50,11 +50,15 @@ Validate against [the schema](../messages/schema.json) and run
 ## Receiving
 
 ```sh
-python3 tools/mailbox.py read agent2  # Agent 1 receives Agent 2
-python3 tools/mailbox.py read agent1  # Agent 2 receives Agent 1
+python3 tools/mailbox.py inbox agent2  # Agent 1 receives Agent 2
+python3 tools/mailbox.py inbox agent1  # Agent 2 receives Agent 1
 ```
 
 This fetches the named remote branch and reads its mailbox with `git show`.
+`inbox` displays only messages beyond the local outbound `ack_sequence`, so a
+new request stays visible without printing the entire history. It does not
+advance acknowledgments. Use `read` instead of `inbox` to inspect full history.
+An acknowledgment beyond the fetched history is an error, not an empty inbox.
 For this private repository it uses `gh auth git-credential` with that agent's
 workspace-local GitHub configuration. Each agent authenticates independently;
 `GH_CONFIG_DIR` can point to a directory beneath the clone's parent project
