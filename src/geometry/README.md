@@ -10,6 +10,9 @@ pub fun split_convex(shape: Polygon, start: Vec2, end: Vec2, epsilon: Float) -> 
 
 It is pure, typed Maylang: no mutation of inputs, I/O, randomness, physics or
 native calls. Tests are in [`tests/geometry/`](../../tests/geometry/README.md).
+`numeric.may` holds the shared finite-coordinate guard (`MAX_COORDINATE`,
+`finite_coordinate`, `finite_point`, `vector_length`), so every geometry module
+applies one range policy.
 
 ## Results
 
@@ -85,3 +88,35 @@ native calls. Tests are in [`tests/geometry/`](../../tests/geometry/README.md).
   game outlines (tens of vertices), not large meshes.
 - Concave input is rejected as `invalid`. It needs decomposition, which is a
   later milestone.
+
+## Mass properties
+
+`mass.may` implements geometry-mass-v1:
+
+```may
+pub struct MassProperties { area: Float, centroid: Vec2, inertia: Float }
+pub fun mass_properties(shape: Polygon) -> MassProperties
+pub fun recentred(shape: Polygon, origin: Vec2) -> Polygon
+```
+
+- `area` is unsigned, so either winding works. `centroid` is the area centroid
+  in the input's space. `inertia` is the polar second moment of area about the
+  centroid, per unit density. So `mass = density × area` and
+  `I = density × inertia`.
+- The sums run relative to the first vertex. Translating a shape to `1e6`
+  changes nothing except the centroid.
+- `mass_properties` calls `fail()`, never returns a zero sentinel, when:
+  - there are fewer than three vertices;
+  - any coordinate is non-finite or beyond `1e9`;
+  - the area is not positive (collinear outlines, balanced bow ties);
+  - the centroid or inertia comes out degenerate, for example a nearly
+    cancelling self-intersecting outline.
+
+  It does not check simplicity. Pass validated shapes or `split_convex`
+  pieces.
+- `recentred` returns fresh vertices translated by `-origin`, with the winding
+  unchanged. Recentring on the centroid gives body-local vertices.
+- Splits conserve area, the area-weighted centroid, and (by the parallel-axis
+  theorem) inertia about the parent centroid. Tests require a relative error of
+  `1e-9` or better; observed errors are about `1e-16` near the origin and about
+  `7e-12` at `1e6`.

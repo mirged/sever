@@ -1,0 +1,66 @@
+import "../core/types.may";
+import "../core/math.may";
+import "numeric.may";
+
+/// Area, area centroid and polar second moment of area about the centroid.
+/// For a uniform density, mass = density * area and the moment of inertia is
+/// density * inertia.
+pub struct MassProperties {
+    area: Float,
+    centroid: Vec2,
+    inertia: Float
+}
+
+/// Mass properties of a simple polygon in either winding. Sums run relative
+/// to the first vertex to limit cancellation far from the origin. Fails for
+/// fewer than three vertices, coordinates outside the finite range, a
+/// non-positive area, or a result that is not finite.
+pub fun mass_properties(shape: Polygon) -> MassProperties {
+    let count: Int = len(shape.vertices);
+    if (count < 3) {
+        fail("mass_properties needs at least three vertices");
+    }
+    for vertex: Vec2 in shape.vertices {
+        if (not finite_point(vertex)) {
+            fail("mass_properties needs finite coordinates within 1e9");
+        }
+    }
+    let origin: Vec2 = shape.vertices[0];
+    mut twice_area: Float = 0.0;
+    mut moment_x: Float = 0.0;
+    mut moment_y: Float = 0.0;
+    mut second: Float = 0.0;
+    for i: Int in 0..count {
+        let a: Vec2 = subtract(shape.vertices[i], origin);
+        let b: Vec2 = subtract(shape.vertices[(i + 1) % count], origin);
+        let weight: Float = cross(a, b);
+        twice_area += weight;
+        moment_x += (a.x + b.x) * weight;
+        moment_y += (a.y + b.y) * weight;
+        second += (dot(a, a) + dot(a, b) + dot(b, b)) * weight;
+    }
+    mut orientation: Float = 1.0;
+    if (twice_area < 0.0) {
+        orientation = -1.0;
+    }
+    let area: Float = orientation * twice_area * 0.5;
+    if (not (area > 0.0)) {
+        fail("mass_properties needs a positive area");
+    }
+    let offset: Vec2 = Vec2(moment_x / (3.0 * twice_area), moment_y / (3.0 * twice_area));
+    let inertia: Float = orientation * second / 12.0 - area * dot(offset, offset);
+    let centroid: Vec2 = add(origin, offset);
+    if (not (finite_point(centroid) and inertia > 0.0)) {
+        fail("mass_properties result is degenerate or not finite");
+    }
+    return MassProperties(area, centroid, inertia);
+}
+
+/// Fresh vertices translated so that `origin` becomes the local origin.
+pub fun recentred(shape: Polygon, origin: Vec2) -> Polygon {
+    let points: List<Vec2> = [];
+    for vertex: Vec2 in shape.vertices {
+        push(points, subtract(vertex, origin));
+    }
+    return Polygon(points);
+}

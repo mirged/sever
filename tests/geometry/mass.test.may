@@ -1,0 +1,159 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/geometry/slice.may";
+import "../../src/geometry/mass.may";
+
+let EPSILON: Float = 0.000001;
+let TAU: Float = 6.283185307179586;
+mut checks: Int = 0;
+
+fun expect(value: Bool, label: Str) -> Nil {
+    if (not value) {
+        fail("FAIL: " + label);
+    }
+    checks += 1;
+    return;
+}
+
+/// Relative comparison, with an absolute floor for values near zero.
+fun close(actual: Float, expected: Float, relative: Float) -> Bool {
+    let difference: Float = abs(actual - expected);
+    return difference <= relative * abs(expected) or difference <= relative;
+}
+
+fun expect_mass(shape: Polygon, area: Float, cx: Float, cy: Float, inertia: Float, label: Str) -> Nil {
+    let m: MassProperties = mass_properties(shape);
+    print(label + " | area " + str(m.area) + " | centroid " + str(m.centroid.x) + ", " + str(m.centroid.y)
+        + " | inertia " + str(m.inertia));
+    expect(close(m.area, area, 0.000000000001), label + ": area");
+    expect(close(m.centroid.x, cx, 0.000000000001) and close(m.centroid.y, cy, 0.000000000001),
+        label + ": centroid");
+    expect(close(m.inertia, inertia, 0.000000000001), label + ": inertia");
+    return;
+}
+
+fun reversed(shape: Polygon) -> Polygon {
+    let points: List<Vec2> = [];
+    mut i: Int = len(shape.vertices) - 1;
+    while (i >= 0) {
+        push(points, shape.vertices[i]);
+        i -= 1;
+    }
+    return Polygon(points);
+}
+
+fun translated(shape: Polygon, dx: Float, dy: Float) -> Polygon {
+    let points: List<Vec2> = [];
+    for vertex: Vec2 in shape.vertices {
+        push(points, Vec2(vertex.x + dx, vertex.y + dy));
+    }
+    return Polygon(points);
+}
+
+/// The failure message, or "" when mass_properties succeeds.
+fun rejection(shape: Polygon) -> Str {
+    mut message: Str = "";
+    may {
+        mass_properties(shape);
+    } otherwise {
+        message = str(err.message);
+    }
+    return message;
+}
+
+// Closed forms: rectangle A = wh, I = A(w^2 + h^2)/12; right triangle with legs
+// b, h: A = bh/2, centroid (b/3, h/3), I = bh(b^2 + h^2)/36; equilateral triangle
+// of side s: I = A s^2 / 12.
+let slab: Polygon = rectangle(6.0, 0.5);
+expect_mass(slab, 3.0, 0.0, 0.0, 3.0 * (36.0 + 0.25) / 12.0, "6x0.5 rectangle");
+expect_mass(reversed(slab), 3.0, 0.0, 0.0, 3.0 * (36.0 + 0.25) / 12.0, "6x0.5 rectangle, clockwise");
+let right: Polygon = Polygon([Vec2(0.0, 0.0), Vec2(3.0, 0.0), Vec2(0.0, 4.0)]);
+expect_mass(right, 6.0, 1.0, 4.0 / 3.0, 12.0 * 25.0 / 36.0, "3-4 right triangle");
+expect_mass(reversed(right), 6.0, 1.0, 4.0 / 3.0, 12.0 * 25.0 / 36.0, "3-4 right triangle, clockwise");
+let root3: Float = sqrt(3.0);
+let equilateral: Polygon = Polygon([Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(1.0, root3)]);
+expect_mass(equilateral, root3, 1.0, root3 / 3.0, root3 * 4.0 / 12.0, "equilateral side 2");
+
+// Translation moves the centroid and nothing else.
+expect_mass(translated(slab, 1000000.0, -250000.0), 3.0, 1000000.0, -250000.0, 3.0 * (36.0 + 0.25) / 12.0,
+    "rectangle at 1e6");
+expect_mass(translated(right, -1000000.0, 1000000.0), 6.0, -1000000.0 + 1.0, 1000000.0 + 4.0 / 3.0,
+    12.0 * 25.0 / 36.0, "right triangle at 1e6");
+let first_vertex: Polygon = Polygon([Vec2(0.0, 4.0), Vec2(0.0, 0.0), Vec2(3.0, 0.0)]);
+expect_mass(first_vertex, 6.0, 1.0, 4.0 / 3.0, 12.0 * 25.0 / 36.0, "rotated vertex order");
+
+// Splits conserve area, the area-weighted centroid and, by the parallel-axis
+// theorem, the inertia about the parent centroid.
+fun conserves(shape: Polygon, start: Vec2, end: Vec2, label: Str) -> Nil {
+    let result: SliceResult = split_convex(shape, start, end, EPSILON);
+    expect(result.status == "split", label + ": splits");
+    let whole: MassProperties = mass_properties(shape);
+    let a: MassProperties = mass_properties(result.pieces[0]);
+    let b: MassProperties = mass_properties(result.pieces[1]);
+    let area: Float = a.area + b.area;
+    let cx: Float = (a.area * a.centroid.x + b.area * b.centroid.x) / area;
+    let cy: Float = (a.area * a.centroid.y + b.area * b.centroid.y) / area;
+    let da: Vec2 = subtract(a.centroid, whole.centroid);
+    let db: Vec2 = subtract(b.centroid, whole.centroid);
+    let inertia: Float = a.inertia + a.area * dot(da, da) + b.inertia + b.area * dot(db, db);
+    let scale_length: Float = sqrt(whole.area);
+    expect(close(area, whole.area, 0.000000001), label + ": area conserved");
+    expect(abs(cx - whole.centroid.x) <= 0.000000001 * scale_length
+        and abs(cy - whole.centroid.y) <= 0.000000001 * scale_length, label + ": centroid conserved");
+    expect(close(inertia, whole.inertia, 0.000000001), label + ": parallel-axis inertia conserved");
+    print(label + " | inertia parent " + str(whole.inertia) + " | recombined " + str(inertia));
+    return;
+}
+conserves(slab, Vec2(0.7, -1.0), Vec2(1.9, 1.0), "slab diagonal cut");
+conserves(reversed(right), Vec2(-1.0, 1.0), Vec2(4.0, 2.5), "clockwise triangle cut");
+conserves(translated(slab, 1000000.0, 1000000.0), Vec2(1000000.7, 999999.0), Vec2(1000001.9, 1000001.0),
+    "slab cut at 1e6");
+mut swept: Int = 0;
+for k: Int in 0..36 {
+    let angle: Float = TAU * float(k) / 36.0 + 0.05;
+    let start: Vec2 = Vec2(-10.0 * cos(angle), 0.1 - 10.0 * sin(angle));
+    let end: Vec2 = Vec2(10.0 * cos(angle), 0.1 + 10.0 * sin(angle));
+    if (split_convex(slab, start, end, EPSILON).status == "split") {
+        conserves(slab, start, end, "slab sweep " + str(k));
+        swept += 1;
+    }
+}
+expect(swept == 36, "every sweep blade through the slab splits");
+
+// recentred returns fresh vertices with the centroid at the local origin.
+let source: Polygon = translated(right, 5.0, -7.0);
+let whole: MassProperties = mass_properties(source);
+let local: Polygon = recentred(source, whole.centroid);
+let local_mass: MassProperties = mass_properties(local);
+expect(close(local_mass.centroid.x, 0.0, 0.000000000001) and close(local_mass.centroid.y, 0.0, 0.000000000001),
+    "recentred centroid at origin");
+expect(close(local_mass.inertia, whole.inertia, 0.000000000001), "recentred inertia unchanged");
+expect(signed_area(local) > 0.0 and signed_area(source) > 0.0, "recentred keeps winding");
+local.vertices[0].x = 999.0;
+expect(source.vertices[0].x == 5.0 and source.vertices[0].y == -7.0, "recentred vertices are fresh");
+expect(len(source.vertices) == 3, "mass_properties leaves the input intact");
+
+// Degenerate or non-finite input fails instead of returning a zero sentinel.
+let huge: Float = 1.0e300;
+let infinity: Float = huge * huge;
+let not_a_number: Float = infinity - infinity;
+let too_few: Str = "mass_properties needs at least three vertices";
+let out_of_range: Str = "mass_properties needs finite coordinates within 1e9";
+let no_area: Str = "mass_properties needs a positive area";
+let degenerate: Str = "mass_properties result is degenerate or not finite";
+expect(rejection(Polygon([])) == too_few, "empty outline fails");
+expect(rejection(Polygon([Vec2(0.0, 0.0), Vec2(1.0, 1.0)])) == too_few, "two vertices fail");
+expect(rejection(Polygon([Vec2(0.0, 0.0), Vec2(1.0, 0.0), Vec2(2.0, 0.0)])) == no_area, "collinear outline fails");
+expect(rejection(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 2.0), Vec2(2.0, 0.0), Vec2(0.0, 2.0)])) == no_area,
+    "balanced bow tie fails");
+expect(rejection(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 2.0), Vec2(2.0, 0.0), Vec2(0.0, 2.000000000001)])) == degenerate,
+    "nearly cancelling bow tie fails instead of reporting a far-away centroid");
+expect(rejection(Polygon([Vec2(0.0, 0.0), Vec2(not_a_number, 0.0), Vec2(0.0, 1.0)])) == out_of_range,
+    "NaN vertex fails");
+expect(rejection(Polygon([Vec2(0.0, 0.0), Vec2(infinity, 0.0), Vec2(0.0, 1.0)])) == out_of_range,
+    "infinite vertex fails");
+expect(rejection(Polygon([Vec2(-10000000000.0, 0.0), Vec2(10000000000.0, 0.0), Vec2(0.0, 1.0)])) == out_of_range,
+    "vertex beyond 1e9 fails even when the centroid is in range");
+expect(rejection(slab) == "", "valid outline does not fail");
+
+print("PASS: " + str(checks) + " mass checks");

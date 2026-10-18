@@ -1,5 +1,6 @@
 import "../core/types.may";
 import "../core/math.may";
+import "numeric.may";
 
 /// Status is exactly "split", "miss" or "invalid". A split holds two pieces:
 /// pieces[0] lies left of the blade direction, pieces[1] lies right of it.
@@ -8,33 +9,12 @@ pub struct SliceResult {
     pieces: List<Polygon>
 }
 
-/// Largest accepted coordinate magnitude, in world units. Keeping inputs well
-/// below the binary64 overflow range also keeps cross products finite.
-let MAX_COORDINATE: Float = 1.0e9;
-
 fun miss() -> SliceResult {
     return SliceResult("miss", []);
 }
 
 fun invalid() -> SliceResult {
     return SliceResult("invalid", []);
-}
-
-/// Written so that it rejects NaN both under IEEE comparisons (all false) and
-/// under the pinned runtime, where every ordered comparison with NaN is true.
-fun in_range(value: Float) -> Bool {
-    if (value > MAX_COORDINATE or value < -MAX_COORDINATE) {
-        return false;
-    }
-    return value <= MAX_COORDINATE and value >= -MAX_COORDINATE;
-}
-
-fun valid_point(point: Vec2) -> Bool {
-    return in_range(point.x) and in_range(point.y);
-}
-
-fun length(value: Vec2) -> Float {
-    return sqrt(dot(value, value));
 }
 
 fun copy_point(point: Vec2) -> Vec2 {
@@ -51,7 +31,7 @@ fun strictly_convex(shape: Polygon, epsilon: Float) -> Bool {
         return false;
     }
     for vertex: Vec2 in shape.vertices {
-        if (not valid_point(vertex)) {
+        if (not finite_point(vertex)) {
             return false;
         }
     }
@@ -63,7 +43,7 @@ fun strictly_convex(shape: Polygon, epsilon: Float) -> Bool {
     for i: Int in 0..count {
         let from: Vec2 = shape.vertices[i];
         let edge: Vec2 = subtract(shape.vertices[(i + 1) % count], from);
-        let edge_length: Float = length(edge);
+        let edge_length: Float = vector_length(edge);
         if (not (edge_length > epsilon)) {
             return false;
         }
@@ -139,14 +119,14 @@ fun on_blade(point: Vec2, start: Vec2, direction: Vec2, blade_length: Float, eps
 /// longer than epsilon reports "invalid". See src/geometry/README.md for the
 /// tolerance policy and numeric limits.
 pub fun split_convex(shape: Polygon, start: Vec2, end: Vec2, epsilon: Float) -> SliceResult {
-    if (not (in_range(epsilon) and epsilon > 0.0)) {
+    if (not (finite_coordinate(epsilon) and epsilon > 0.0)) {
         return invalid();
     }
-    if (not (valid_point(start) and valid_point(end) and strictly_convex(shape, epsilon))) {
+    if (not (finite_point(start) and finite_point(end) and strictly_convex(shape, epsilon))) {
         return invalid();
     }
     let blade: Vec2 = subtract(end, start);
-    let blade_length: Float = length(blade);
+    let blade_length: Float = vector_length(blade);
     if (not (blade_length > epsilon)) {
         return invalid();
     }

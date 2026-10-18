@@ -1,0 +1,24 @@
+import "../core/types.may";
+import "../core/math.may";
+
+/// Largest accepted coordinate magnitude, in world units. Keeping inputs well
+/// below the binary64 overflow range also keeps cross products finite.
+pub let MAX_COORDINATE: Float = 1.0e9;
+
+/// Whether a value is finite and within MAX_COORDINATE. Written so that it
+/// rejects NaN both under IEEE comparisons (all false) and under the pinned
+/// runtime, where every ordered comparison with NaN is true.
+pub fun finite_coordinate(value: Float) -> Bool {
+    if (value > MAX_COORDINATE or value < -MAX_COORDINATE) {
+        return false;
+    }
+    return value <= MAX_COORDINATE and value >= -MAX_COORDINATE;
+}
+
+pub fun finite_point(point: Vec2) -> Bool {
+    return finite_coordinate(point.x) and finite_coordinate(point.y);
+}
+
+pub fun vector_length(value: Vec2) -> Float {
+    return sqrt(dot(value, value));
+}
