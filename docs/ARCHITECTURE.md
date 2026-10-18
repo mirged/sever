@@ -17,7 +17,7 @@
 | `src/physics/rigid.may` | Agent 1 | Broad phase, rigid integration, impulses and convex character contacts |
 | `src/game/cutter.may` | Agent 1 | Fragment construction, ownership, velocity, budgets and cable release |
 | `src/game/timing.may` | Agent 1 | Fixed-step accumulator with bounded catch-up |
-| `src/render/` | Agent 1 | Camera projection and native UI draw commands |
+| `src/render/` | Agent 1 | Camera projection, 60 Hz render deadlines and native UI draw commands |
 | `desktop.may` | Agent 1 | Native window, input, headless preview, report and lifecycle |
 | `main.may` | Agent 1 | Original headless model smoke demo |
 
@@ -37,6 +37,14 @@ per frame. Excess whole ticks are discarded and reported. Pausing/focus loss
 clears the backlog; normal play buffers a short jump press until the next tick.
 The wall clock can jump, so negative deltas are ignored. This is not a monotonic
 timing guarantee. Autoplay intentionally runs without keyboard focus.
+
+Native rendering has its own 60 Hz deadline. Event polling waits at most 17 ms
+and can wake early for input, while early polls skip full-scene reconstruction.
+Slight lateness preserves cadence; a long stall discards render backlog instead
+of drawing stale catch-up frames. Backward/non-finite clock samples reset the
+pacer. Supported absolute render times are bounded to ±1e12 seconds to keep the
+1/60-second increment representable. A tick-limited run forces its final draw.
+The cap limits submissions; it is not a promise of 60 presented frames per second.
 
 The original free-flight demonstration remains semi-implicit Euler. The workshop
 uses four 1/240-second substeps per fixed tick. Rigid bodies integrate their

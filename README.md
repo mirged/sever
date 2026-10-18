@@ -44,7 +44,9 @@ python3 tools/dev.py run workshop
 
 Move with **A/D** or **Left/Right**, jump with **Space/W/Up**, pause with **P**,
 aim with the **mouse**, cut with **J**, reset with **R**, and close with **Esc**.
-Normal play pauses when focus is lost. The blade reaches 3.5 m along the aim
+Normal play pauses when focus is lost. Native drawing is capped at 60 Hz;
+input events and fixed-step physics run independently of that draw deadline.
+The blade reaches 3.5 m along the aim
 line; it must traverse a polygon to split it. Dark foundation blocks are
 protected. Cut pieces smaller than 0.025 square metres are rejected as a pair;
 the room allows at most 24 bodies. Cutting a supported slab detaches its cables.
@@ -69,7 +71,8 @@ python3 tools/dev.py run workshop -- --headless --cut-demo --ticks 600 --snapsho
 slab, then recovers from one fall and reaches the exit. Without either, a headless run
 leaves the player at spawn. Native autoplay can also run with `--ticks 600` and
 does not pause on focus loss. `--report` records the tick count, result, deaths,
-renderer, frame count, wall time, discarded catch-up time, cuts, body counts, requested ticks and stop reason. Generated previews
+renderer, frame count, wall time, discarded catch-up time, cuts, body counts, requested ticks and stop reason. Native reports also record
+event polls and the render cap. Generated previews
 stay in ignored `build/`; the default `run` target remains the original model
 smoke demonstration so CI does not need a display.
 
