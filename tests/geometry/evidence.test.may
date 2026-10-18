@@ -1,0 +1,139 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/geometry/slice.may";
+
+/// Prints an expected/observed matrix for the reviewed edge cases, then proves
+/// blade-length independence, scale behavior and explicit rejections.
+let EPSILON: Float = 0.000001;
+mut rows: Int = 0;
+mut mismatches: Int = 0;
+
+fun square(x: Float, y: Float, size: Float) -> Polygon {
+    return Polygon([Vec2(x, y), Vec2(x + size, y), Vec2(x + size, y + size), Vec2(x, y + size)]);
+}
+
+fun row(label: Str, expected: Str, result: SliceResult) -> Nil {
+    rows += 1;
+    mut mark: Str = "ok";
+    if (result.status != expected) {
+        mark = "MISMATCH";
+        mismatches += 1;
+    }
+    print(label + " | expected " + expected + " | observed " + result.status + " | " + mark);
+    return;
+}
+
+fun cut(shape: Polygon, ax: Float, ay: Float, bx: Float, by: Float, epsilon: Float) -> SliceResult {
+    return split_convex(shape, Vec2(ax, ay), Vec2(bx, by), epsilon);
+}
+
+fun expect(value: Bool, label: Str) -> Nil {
+    rows += 1;
+    if (not value) {
+        mismatches += 1;
+        print(label + " | MISMATCH");
+    }
+    return;
+}
+
+fun near(actual: Float, expected: Float, tolerance: Float) -> Bool {
+    let difference: Float = actual - expected;
+    return difference > -tolerance and difference < tolerance;
+}
+
+let box: Polygon = square(0.0, 0.0, 2.0);
+let clockwise: Polygon = Polygon([Vec2(0.0, 0.0), Vec2(0.0, 2.0), Vec2(2.0, 2.0), Vec2(2.0, 0.0)]);
+
+print("case | expected | observed");
+row("graze edge y=0", "miss", cut(box, -1.0, 0.0, 3.0, 0.0, EPSILON));
+row("graze edge y=0.9e-6", "miss", cut(box, -1.0, 0.0000009, 3.0, 0.0000009, EPSILON));
+row("graze vertex (2,2)", "miss", cut(box, 1.0, 3.0, 3.0, 1.0, EPSILON));
+row("through vertices (0,0)-(2,2)", "split", cut(box, -1.0, -1.0, 3.0, 3.0, EPSILON));
+row("through vertex (0,0) to edge", "split", cut(box, -1.0, -1.0, 3.0, 1.0, EPSILON));
+row("segment ends inside", "miss", cut(box, -1.0, 1.0, 1.0, 1.0, EPSILON));
+row("segment starts inside", "miss", cut(box, 1.0, 1.0, 3.0, 1.0, EPSILON));
+row("segment wholly inside", "miss", cut(box, 0.5, 1.0, 1.5, 1.0, EPSILON));
+row("ccw winding", "split", cut(box, -1.0, 0.75, 3.0, 1.75, EPSILON));
+row("cw winding", "split", cut(clockwise, -1.0, 0.75, 3.0, 1.75, EPSILON));
+row("reversed blade", "split", cut(box, 3.0, 1.75, -1.0, 0.75, EPSILON));
+row("sliver 1.01e-6 (above eps)", "split", cut(box, -1.0, 2.0 - 0.00000101, 3.0, 2.0 - 0.00000101, EPSILON));
+row("sliver 0.99e-6 (below eps)", "miss", cut(box, -1.0, 2.0 - 0.00000099, 3.0, 2.0 - 0.00000099, EPSILON));
+row("duplicate edge", "invalid", cut(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(0.0, 0.0), Vec2(2.0, 0.0),
+    Vec2(2.0, 2.0)]), -1.0, 1.0, 3.0, 1.0, EPSILON));
+row("concave", "invalid", cut(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(1.0, 0.5), Vec2(2.0, 2.0),
+    Vec2(0.0, 2.0)]), -1.0, 1.0, 3.0, 1.0, EPSILON));
+let huge: Float = 1.0e300;
+let infinity: Float = huge * huge;
+let not_a_number: Float = infinity - infinity;
+row("NaN coordinate", "invalid", cut(Polygon([Vec2(0.0, 0.0), Vec2(not_a_number, 0.0), Vec2(0.0, 2.0)]),
+    -1.0, 1.0, 3.0, 1.0, EPSILON));
+row("infinite coordinate", "invalid", cut(Polygon([Vec2(0.0, 0.0), Vec2(infinity, 0.0), Vec2(0.0, 2.0)]),
+    -1.0, 1.0, 3.0, 1.0, EPSILON));
+row("-infinite blade", "invalid", cut(box, -infinity, 1.0, 3.0, 1.0, EPSILON));
+
+// The reversed cases must agree with the forward cut, with pieces swapped.
+let forward: SliceResult = cut(box, -1.0, 0.75, 3.0, 1.75, EPSILON);
+let backward: SliceResult = cut(box, 3.0, 1.75, -1.0, 0.75, EPSILON);
+let flipped: SliceResult = cut(clockwise, -1.0, 0.75, 3.0, 1.75, EPSILON);
+expect(near(signed_area(forward.pieces[0]), signed_area(backward.pieces[1]), 0.000000000001)
+    and near(signed_area(forward.pieces[1]), signed_area(backward.pieces[0]), 0.000000000001),
+    "reversed blade swaps pieces");
+expect(near(signed_area(forward.pieces[0]), -signed_area(flipped.pieces[0]), 0.000000000001)
+    and signed_area(flipped.pieces[0]) < 0.0, "reversed winding mirrors signed area");
+
+// Stretching the blade along one supporting line keeps the same decisions and
+// pieces: the tolerance is a world distance, not a fraction of blade length.
+let reaches: List<Float> = [1.5, 10.0, 1000.0, 100000.0];
+for reach: Float in reaches {
+    let dx: Float = 0.9701425001453319;
+    let dy: Float = 0.24253562503633297;
+    let base: SliceResult = cut(box, 1.0 - dx * 1.5, 1.25 - dy * 1.5, 1.0 + dx * 1.5, 1.25 + dy * 1.5, EPSILON);
+    let long: SliceResult = cut(box, 1.0 - dx * reach, 1.25 - dy * reach, 1.0 + dx * reach, 1.25 + dy * reach,
+        EPSILON);
+    expect(long.status == "split", "stretched diagonal splits at reach " + str(reach));
+    mut same: Bool = len(long.pieces[0].vertices) == len(base.pieces[0].vertices);
+    if (same) {
+        for i: Int in 0..len(base.pieces[0].vertices) {
+            let a: Vec2 = base.pieces[0].vertices[i];
+            let b: Vec2 = long.pieces[0].vertices[i];
+            same = same and near(a.x, b.x, 0.000000001) and near(a.y, b.y, 0.000000001);
+        }
+    }
+    expect(same, "stretched blade gives the same piece at reach " + str(reach));
+    let inside: SliceResult = cut(box, 1.0 - reach, 2.0 - 0.00000099, 1.0 + reach, 2.0 - 0.00000099, EPSILON);
+    let outside: SliceResult = cut(box, 1.0 - reach, 2.0 - 0.00000101, 1.0 + reach, 2.0 - 0.00000101, EPSILON);
+    expect(inside.status == "miss", "0.99e-6 from the edge misses at reach " + str(reach));
+    expect(outside.status == "split", "1.01e-6 from the edge splits at reach " + str(reach));
+}
+
+// Area conservation from millimetre to 1e8-coordinate scales.
+fun conserved(shape: Polygon, start: Vec2, end: Vec2, epsilon: Float, label: Str) -> Nil {
+    let result: SliceResult = split_convex(shape, start, end, epsilon);
+    expect(result.status == "split", label + " splits");
+    if (result.status == "split") {
+        let original: Float = signed_area(shape);
+        let error: Float = abs(signed_area(result.pieces[0]) + signed_area(result.pieces[1]) - original) / original;
+        print(label + " | relative area error " + str(error));
+        expect(error < 0.000000001, label + " conserves area");
+    }
+    return;
+}
+conserved(square(0.0, 0.0, 0.001), Vec2(-0.001, 0.0003), Vec2(0.002, 0.0007), 0.000000001, "1 mm square at origin");
+conserved(square(0.0, 0.0, 2.0), Vec2(-1.0, 0.75), Vec2(3.0, 1.75), EPSILON, "2 m square at origin");
+conserved(square(1000000.0, 1000000.0, 2.0), Vec2(999999.0, 1000000.75), Vec2(1000003.0, 1000001.75), EPSILON,
+    "2 m square at 1e6");
+conserved(square(100000000.0, -100000000.0, 10000.0), Vec2(99990000.0, -99996000.0),
+    Vec2(100020000.0, -99993000.0), 0.001, "10 km square at 1e8");
+
+// Every cut above used `box`; its vertices must be exactly as constructed.
+let pristine: Polygon = square(0.0, 0.0, 2.0);
+expect(len(box.vertices) == 4, "box keeps four vertices");
+for i: Int in 0..4 {
+    expect(box.vertices[i].x == pristine.vertices[i].x and box.vertices[i].y == pristine.vertices[i].y,
+        "box vertex " + str(i) + " untouched");
+}
+
+print("PASS: " + str(rows) + " evidence rows");
+if (mismatches > 0) {
+    fail("FAIL: " + str(mismatches) + " evidence mismatches");
+}

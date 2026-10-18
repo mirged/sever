@@ -1,0 +1,73 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/geometry/slice.may";
+
+let EPSILON: Float = 0.000001;
+let TAU: Float = 6.283185307179586;
+
+fun expect(value: Bool, label: Str) -> Nil {
+    if (not value) {
+        fail("FAIL: " + label);
+    }
+    return;
+}
+
+fun regular(sides: Int, radius: Float, cx: Float, cy: Float, clockwise: Bool) -> Polygon {
+    let points: List<Vec2> = [];
+    for i: Int in 0..sides {
+        mut angle: Float = TAU * float(i) / float(sides) + 0.1;
+        if (clockwise) {
+            angle = -angle;
+        }
+        push(points, Vec2(cx + radius * cos(angle), cy + radius * sin(angle)));
+    }
+    return Polygon(points);
+}
+
+/// Sweep blades over angle and offset; every result must be a split or a miss,
+/// and every split must conserve area, keep winding and yield cuttable pieces.
+fun sweep(shape: Polygon, cx: Float, cy: Float, radius: Float, label: Str) -> Int {
+    let original: Float = signed_area(shape);
+    let tolerance: Float = 0.000000001 * abs(original);
+    mut splits: Int = 0;
+    for a: Int in 0..24 {
+        let angle: Float = TAU * float(a) / 24.0 + 0.013;
+        let dx: Float = cos(angle);
+        let dy: Float = sin(angle);
+        for o: Int in 0..21 {
+            let offset: Float = radius * (float(o) - 10.0) / 8.0;
+            let ox: Float = cx - dy * offset;
+            let oy: Float = cy + dx * offset;
+            let reach: Float = 3.0 * radius;
+            let result: SliceResult = split_convex(shape, Vec2(ox - dx * reach, oy - dy * reach),
+                Vec2(ox + dx * reach, oy + dy * reach), EPSILON);
+            if (result.status == "split") {
+                splits += 1;
+                let left: Float = signed_area(result.pieces[0]);
+                let right: Float = signed_area(result.pieces[1]);
+                let difference: Float = left + right - original;
+                expect(difference < tolerance and difference > -tolerance, label + ": area conserved");
+                expect(left * original > 0.0 and right * original > 0.0, label + ": winding kept");
+                // A piece is valid input again: cut it perpendicular to the first blade.
+                let piece: Polygon = result.pieces[0];
+                let again: SliceResult = split_convex(piece, Vec2(ox - dy * reach, oy + dx * reach),
+                    Vec2(ox + dy * reach, oy - dx * reach), EPSILON);
+                expect(again.status != "invalid", label + ": piece is valid input");
+            } else {
+                expect(result.status == "miss", label + ": only split or miss");
+                expect(offset * offset > 0.0, label + ": central blade must split");
+            }
+        }
+    }
+    return splits;
+}
+
+mut total: Int = 0;
+total += sweep(regular(3, 1.0, 0.0, 0.0, false), 0.0, 0.0, 1.0, "triangle");
+total += sweep(regular(5, 2.0, 3.0, -1.0, true), 3.0, -1.0, 2.0, "clockwise pentagon");
+total += sweep(regular(8, 0.5, 0.0, 0.0, false), 0.0, 0.0, 0.5, "octagon");
+total += sweep(regular(32, 10.0, -50.0, 20.0, false), -50.0, 20.0, 10.0, "32-gon");
+total += sweep(regular(6, 1.0, 100000.0, 100000.0, false), 100000.0, 100000.0, 1.0, "far hexagon");
+total += sweep(rectangle(6.0, 0.5), 0.0, 0.0, 3.0, "workshop slab");
+expect(total > 600, "sweeps exercise many splits");
+print("PASS: " + str(total) + " swept splits conserve area and winding");
