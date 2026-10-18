@@ -19,8 +19,9 @@ transforms and the geometry contact kernel. It edits no other module.
   casting. Repeating the same spell never resonates.
 - **Blink clearance:** `clear_at` checks the player's 0.6 × 1.3 box against
   every body with `contact_convex`, and only a `separate` result counts as
-  clear. An `invalid` contact (a malformed body or a non-finite box) is never
-  treated as clear. Touching counts as separate, so landing on top of a floor
+  clear. A non-finite or out-of-range centre is never clear, even in an empty
+  world, and an `invalid` contact (a malformed body such as an empty outline)
+  fails closed, so blink reports `blocked` instead of trusting it. Touching counts as separate, so landing on top of a floor
   works. Blink backs off in 0.25 m steps and reports `blocked`
   when nothing beyond 0.5 m is clear. It arrives at rest and airborne.
 - **Cuts** go through `sever_world` with a 24-body budget, so they inherit its
@@ -33,8 +34,11 @@ transforms and the geometry contact kernel. It edits no other module.
   `no mana`, `blocked`. A failure changes only `book.status`; the world,
   player, mana and cooldowns are untouched.
 
-## Not done yet
+## Native status
 
-The spells are not bound to keys or drawn in the native workshop. Doing that
-means editing `desktop.may` and `src/game/`, which belong to Agent 1. Tests are
-in [`tests/spells/spells.test.may`](../../tests/spells/spells.test.may).
+Agent 1's native adapter (`src/game/magic.may` and the desktop controls, on
+branch `agent1-spell-ui`) binds 1–5 to select a spell and F to cast at the
+mouse target, and displays mana, cooldowns and resonance. As of this commit it
+is a review candidate and is not yet merged to `main`. This library does not
+depend on it. Tests are in
+[`tests/spells/spells.test.may`](../../tests/spells/spells.test.may).
