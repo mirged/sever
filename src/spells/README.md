@@ -18,8 +18,10 @@ transforms and the geometry contact kernel. It edits no other module.
   cast refunds 25% of its cost. The full cost must still be available when
   casting. Repeating the same spell never resonates.
 - **Blink clearance:** `clear_at` checks the player's 0.6 × 1.3 box against
-  every body with `contact_convex`. Touching counts as clear, so landing on
-  top of a floor works. Blink backs off in 0.25 m steps and reports `blocked`
+  every body with `contact_convex`, and only a `separate` result counts as
+  clear. An `invalid` contact (a malformed body or a non-finite box) is never
+  treated as clear. Touching counts as separate, so landing on top of a floor
+  works. Blink backs off in 0.25 m steps and reports `blocked`
   when nothing beyond 0.5 m is clear. It arrives at rest and airborne.
 - **Cuts** go through `sever_world` with a 24-body budget, so they inherit its
   conservation rules: no piece under 0.025 m², fragments are dynamic, and each
@@ -27,7 +29,7 @@ transforms and the geometry contact kernel. It edits no other module.
   fragments made by earlier ones. That is how `shatter` splinters a platform
   with 5 cuts.
 - **Failure checks run in this order:** `unknown spell`, `invalid aim`
-  (non-finite or beyond 1000), `no aim`, `out of range`, `cooldown`,
+  (a non-finite aim or caster position, or one beyond 1000), `no aim`, `out of range`, `cooldown`,
   `no mana`, `blocked`. A failure changes only `book.status`; the world,
   player, mana and cooldowns are untouched.
 
