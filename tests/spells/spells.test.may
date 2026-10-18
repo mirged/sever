@@ -173,6 +173,29 @@ expect(stuck.status == "blocked" and vault_book.mana == 100.0 and vault_book.coo
     and vault_book.casts == 0 and vault_book.status == "blocked", "blocked blink costs nothing");
 expect(prisoner.position.x == 0.0 and prisoner.position.y == 0.0, "blocked blink does not move the player");
 
+// Review fix (agent1-0016): invalid contacts are never clear. A malformed
+// obstacle blocks blink instead of being walked through, and a non-finite
+// caster cannot cast at all.
+let broken: World = World([Body(1, Polygon([Vec2(-1.0, -1.0), Vec2(1.0, -1.0), Vec2(0.0, -0.5), Vec2(1.0, 1.0),
+    Vec2(-1.0, 1.0)]), Vec2(4.0, 0.0), Vec2(0.0, 0.0), 0.0, 0.0, false, true, "concrete")], [], Vec2(0.0, -24.0), 0);
+expect(not clear_at(broken, Vec2(0.0, 0.0)), "a concave obstacle is not provably clear");
+let walker: Player = Player(Vec2(0.0, 0.0), Vec2(0.0, 0.0), false, false, 0);
+let walker_book: Spellbook = create_spellbook();
+expect(cast_spell(broken, walker, walker_book, "blink", Vec2(3.0, 0.0), 1).status == "blocked"
+    and walker.position.x == 0.0 and walker_book.mana == 100.0, "blink refuses to trust an invalid contact");
+let huge_value: Float = 1.0e300;
+let lost_value: Float = huge_value * huge_value - huge_value * huge_value;
+let open_room: World = World([], [], Vec2(0.0, -24.0), 0);
+expect(not clear_at(create_training().world, Vec2(lost_value, 0.0)), "a NaN box is not clear");
+let ghost: Player = Player(Vec2(lost_value, 0.0), Vec2(0.0, 0.0), false, false, 0);
+let ghost_book: Spellbook = create_spellbook();
+expect(cast_spell(open_room, ghost, ghost_book, "blink", Vec2(3.0, 0.0), 1).status == "invalid aim"
+    and ghost_book.mana == 100.0 and ghost_book.casts == 0, "a NaN caster cannot blink");
+let far_caster: Player = Player(Vec2(5000.0, 0.0), Vec2(0.0, 0.0), false, false, 0);
+expect(cast_spell(open_room, far_caster, create_spellbook(), "lance", Vec2(10.0, 0.0), 1).status == "invalid aim",
+    "a caster beyond the world limit cannot cast");
+expect(clear_at(open_room, Vec2(0.0, 0.0)), "an empty room is clear");
+
 // Rift slices its own path: rising through the hanging slab cuts it at x = 1.
 let riser: Training = room_at(1.0, 4.5);
 let riser_book: Spellbook = create_spellbook();
