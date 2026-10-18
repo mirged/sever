@@ -1,0 +1,239 @@
+import "../core/types.may";
+import "../core/math.may";
+import "../physics/transforms.may";
+import "../game/training.may";
+import "../game/cutter.may";
+import "../geometry/contact.may";
+
+/// A castable spell: its name, mana cost and cooldown in fixed ticks.
+pub struct SpellDef {
+    name: Str,
+    mana_cost: Float,
+    cooldown_ticks: Int
+}
+
+/// A finite blade segment in world space.
+pub struct Blade {
+    start: Vec2,
+    end: Vec2
+}
+
+/// Per-player casting state. `cooldowns` follows `spell_catalogue()` order.
+pub struct Spellbook {
+    mana: Float,
+    max_mana: Float,
+    regen_per_tick: Float,
+    cooldowns: List<Int>,
+    casts: Int,
+    status: Str,
+    last_spell: Str,
+    since_cast: Int
+}
+
+/// The outcome of one cast. Status is "cast", "unknown spell", "invalid aim",
+/// "no aim", "out of range", "cooldown", "no mana" or "blocked". Only "cast"
+/// spends mana, starts the cooldown or changes the world. `resonance` is true
+/// when the cast chained off a different spell and refunded part of its cost.
+pub struct SpellReport {
+    status: Str,
+    cuts: Int,
+    cables: Int,
+    next_id: Int,
+    resonance: Bool
+}
+
+let ARC_REACH: Float = 3.0;
+let ARC_SPREAD: Float = 0.35;
+let LANCE_REACH: Float = 8.0;
+let SHATTER_RANGE: Float = 6.0;
+let SHATTER_HALF: Float = 1.2;
+let BLINK_RANGE: Float = 4.0;
+let BLINK_STEP: Float = 0.25;
+let BLINK_MINIMUM: Float = 0.5;
+let PLAYER_HALF_WIDTH: Float = 0.3;
+let PLAYER_HALF_HEIGHT: Float = 0.65;
+let RESONANCE_WINDOW: Int = 30;
+let RESONANCE_REFUND: Float = 0.25;
+let AIM_LIMIT: Float = 1000.0;
+let BODY_BUDGET: Int = 24;
+
+pub fun spell_catalogue() -> List<SpellDef> {
+    return [SpellDef("arc", 20.0, 30), SpellDef("lance", 25.0, 45), SpellDef("shatter", 40.0, 75),
+        SpellDef("blink", 30.0, 60), SpellDef("rift", 45.0, 90)];
+}
+
+pub fun create_spellbook() -> Spellbook {
+    let cooldowns: List<Int> = [];
+    for spell: SpellDef in spell_catalogue() {
+        push(cooldowns, 0);
+    }
+    return Spellbook(100.0, 100.0, 0.25, cooldowns, 0, "READY", "", RESONANCE_WINDOW + 1);
+}
+
+/// Index of `name` in the catalogue, or -1.
+pub fun spell_index(name: Str) -> Int {
+    let catalogue: List<SpellDef> = spell_catalogue();
+    for i: Int in 0..len(catalogue) {
+        if (catalogue[i].name == name) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/// One fixed tick: regenerate mana up to the cap, count cooldowns down and age
+/// the resonance window.
+pub fun tick_spellbook(book: Spellbook) -> Nil {
+    book.mana = float(min(book.max_mana, book.mana + book.regen_per_tick));
+    book.since_cast = int(min(RESONANCE_WINDOW + 1, book.since_cast + 1));
+    for i: Int in 0..len(book.cooldowns) {
+        book.cooldowns[i] = int(max(0, book.cooldowns[i] - 1));
+    }
+    return;
+}
+
+fun turned(direction: Vec2, angle: Float) -> Vec2 {
+    let c: Float = float(cos(angle));
+    let s: Float = float(sin(angle));
+    return Vec2(direction.x * c - direction.y * s, direction.x * s + direction.y * c);
+}
+
+fun unit(value: Vec2) -> Vec2 {
+    return scale(value, 1.0 / float(sqrt(dot(value, value))));
+}
+
+/// The blades a cutting spell fires from `origin` toward `aim`. Blink, rift
+/// (whose blade depends on where it lands) and unknown spells fire none.
+/// Callers check the aim first; see cast_spell.
+pub fun spell_blades(name: Str, origin: Vec2, aim: Vec2) -> List<Blade> {
+    let blades: List<Blade> = [];
+    let direction: Vec2 = unit(subtract(aim, origin));
+    if (name == "arc") {
+        let angles: List<Float> = [-ARC_SPREAD, 0.0, ARC_SPREAD];
+        for angle: Float in angles {
+            push(blades, Blade(Vec2(origin.x, origin.y), add(origin, scale(turned(direction, angle), ARC_REACH))));
+        }
+    } else if (name == "lance") {
+        push(blades, Blade(Vec2(origin.x, origin.y), add(origin, scale(direction, LANCE_REACH))));
+    } else if (name == "shatter") {
+        let angles: List<Float> = [0.0, 1.0471975511965976, 2.0943951023931953];
+        for angle: Float in angles {
+            let half: Vec2 = scale(turned(direction, angle), SHATTER_HALF);
+            push(blades, Blade(subtract(aim, half), add(aim, half)));
+        }
+    }
+    return blades;
+}
+
+fun player_box(centre: Vec2) -> Polygon {
+    return Polygon([Vec2(centre.x - PLAYER_HALF_WIDTH, centre.y - PLAYER_HALF_HEIGHT),
+        Vec2(centre.x + PLAYER_HALF_WIDTH, centre.y - PLAYER_HALF_HEIGHT),
+        Vec2(centre.x + PLAYER_HALF_WIDTH, centre.y + PLAYER_HALF_HEIGHT),
+        Vec2(centre.x - PLAYER_HALF_WIDTH, centre.y + PLAYER_HALF_HEIGHT)]);
+}
+
+/// Whether the player's box at `centre` overlaps no body by more than epsilon.
+pub fun clear_at(world: World, centre: Vec2) -> Bool {
+    let box: Polygon = player_box(centre);
+    for body: Body in world.bodies {
+        if (contact_convex(box, world_polygon(body), 0.000001).status == "overlap") {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Farthest clear point toward `aim`, at most BLINK_RANGE away, trying in
+/// BLINK_STEP decrements; nil when nothing beyond BLINK_MINIMUM is clear.
+fun blink_target(world: World, origin: Vec2, aim: Vec2) -> Option<Vec2> {
+    let offset: Vec2 = subtract(aim, origin);
+    let distance: Float = float(min(BLINK_RANGE, float(sqrt(dot(offset, offset)))));
+    let direction: Vec2 = unit(offset);
+    mut reach: Float = distance;
+    while (reach >= BLINK_MINIMUM) {
+        let candidate: Vec2 = add(origin, scale(direction, reach));
+        if (clear_at(world, candidate)) {
+            return candidate;
+        }
+        reach -= BLINK_STEP;
+    }
+    return nil;
+}
+
+fun report(book: Spellbook, status: Str, cuts: Int, cables: Int, next_id: Int) -> SpellReport {
+    book.status = status;
+    return SpellReport(status, cuts, cables, next_id, false);
+}
+
+fun sever_along(world: World, blades: List<Blade>, first_id: Int) -> SpellReport {
+    mut cuts: Int = 0;
+    mut cables: Int = 0;
+    mut next_id: Int = first_id;
+    for blade: Blade in blades {
+        cables += sever_cables(world, blade.start, blade.end);
+        let batch: CutBatch = sever_world(world, blade.start, blade.end, next_id, BODY_BUDGET);
+        cuts += batch.cuts;
+        next_id = batch.next_id;
+    }
+    return SpellReport("cast", cuts, cables, next_id, false);
+}
+
+/// Cast `name` from the player's centre toward `aim`. Checks run in the order
+/// listed on SpellReport; a failed check changes only `book.status`.
+pub fun cast_spell(world: World, player: Player, book: Spellbook, name: Str, aim: Vec2,
+        first_id: Int) -> SpellReport {
+    let index: Int = spell_index(name);
+    if (index < 0) {
+        return report(book, "unknown spell", 0, 0, first_id);
+    }
+    if (not (bounded_number(aim.x, AIM_LIMIT) and bounded_number(aim.y, AIM_LIMIT))) {
+        return report(book, "invalid aim", 0, 0, first_id);
+    }
+    let origin: Vec2 = Vec2(player.position.x, player.position.y);
+    let offset: Vec2 = subtract(aim, origin);
+    let distance: Float = float(sqrt(dot(offset, offset)));
+    if (distance < 0.001) {
+        return report(book, "no aim", 0, 0, first_id);
+    }
+    if (name == "shatter" and distance > SHATTER_RANGE) {
+        return report(book, "out of range", 0, 0, first_id);
+    }
+    let spell: SpellDef = spell_catalogue()[index];
+    if (book.cooldowns[index] > 0) {
+        return report(book, "cooldown", 0, 0, first_id);
+    }
+    if (book.mana < spell.mana_cost) {
+        return report(book, "no mana", 0, 0, first_id);
+    }
+    mut outcome: SpellReport = SpellReport("cast", 0, 0, first_id, false);
+    if (name == "blink" or name == "rift") {
+        let target: Option<Vec2> = blink_target(world, origin, aim);
+        if (target == nil) {
+            return report(book, "blocked", 0, 0, first_id);
+        }
+        let destination: Vec2 = target ?? origin;
+        if (name == "rift") {
+            // The path is cut before the caster arrives, so new fragments
+            // never spawn on top of the landing spot.
+            outcome = sever_along(world, [Blade(origin, Vec2(destination.x, destination.y))], first_id);
+        }
+        player.position = destination;
+        player.velocity = Vec2(0.0, 0.0);
+        player.grounded = false;
+    } else {
+        outcome = sever_along(world, spell_blades(name, origin, aim), first_id);
+    }
+    let resonance: Bool = book.last_spell != "" and book.last_spell != name
+        and book.since_cast <= RESONANCE_WINDOW;
+    mut cost: Float = spell.mana_cost;
+    if (resonance) {
+        cost = spell.mana_cost * (1.0 - RESONANCE_REFUND);
+    }
+    book.mana -= cost;
+    book.cooldowns[index] = spell.cooldown_ticks;
+    book.casts += 1;
+    book.last_spell = name;
+    book.since_cast = 0;
+    book.status = "cast";
+    return SpellReport("cast", outcome.cuts, outcome.cables, outcome.next_id, resonance);
+}
