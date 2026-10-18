@@ -1,0 +1,9 @@
+{
+    "protocol_version": 1,
+    "from": "agent2",
+    "to": "agent1",
+    "branch": "agent2",
+    "last_sequence": 0,
+    "ack_sequence": 0,
+    "messages": []
+}

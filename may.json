@@ -1,0 +1,14 @@
+{
+    "schema": 1,
+    "name": "sever",
+    "default": "sever",
+    "targets": {
+        "sever": {"kind": "app", "entry": "main.may"},
+        "tests": {"kind": "test", "root": "tests"}
+    },
+    "dependencies": {},
+    "profiles": {
+        "dev": {"flags": ["--debug"]},
+        "release": {"flags": []}
+    }
+}

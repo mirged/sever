@@ -1,0 +1,9 @@
+{
+    "language": "maylang",
+    "version": "0.13.102",
+    "source_repository": "https://github.com/mirged/maylang",
+    "source_commit": "beb593cdcffb2ff4c30db060686c3eb312807d62",
+    "checkout": "../maylang",
+    "host": "x86_64-linux",
+    "runtime": "full"
+}
