@@ -15,6 +15,10 @@ prove it with deterministic tests. Keep geometry free of rendering and FFI.
 
 ## 2 — The workshop (Agent 1)
 
+Completed independently of the cutting kernel: native UI canvas, fitted room
+camera, bounded fixed-step accumulator, keyboard run/jump, pause/focus behavior,
+reset, static rectangle contacts, an exit, and headless/native autoplay previews.
+
 Native Maylang UI window, fixed-step accumulator, keyboard movement/jump,
 blade aiming, player/world collision, camera and reset. Integrate the geometry
 API, conserve mass and linear/angular momentum when making dynamic fragments,

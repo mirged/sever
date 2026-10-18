@@ -1,5 +1,9 @@
 # Scaffold validation — 2026-10-18
 
+This records the original scaffold. See
+[the movement lab validation](WORKSHOP_VALIDATION.md) for the subsequent native
+window, player controller and rendering milestone.
+
 Maylang was built from the sibling source checkout at
 `beb593cdcffb2ff4c30db060686c3eb312807d62`. The resulting compiler reports
 `mayc 0.13.102`. The inherited installed compiler was not used.

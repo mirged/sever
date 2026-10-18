@@ -3,13 +3,13 @@
 A physics platformer about cutting the world apart. Slice platforms into ramps,
 drop machinery by severing cables, dismantle enemies, and turn debris into weapons.
 
-**Status: scaffold, not a playable game.** The initial executable runs a
-deterministic model demonstration. Arbitrary cuts, collision response, enemies,
-and a playable level are milestones, not completed features.
+**Status: native movement prototype.** Run and jump through a small platform
+course, reach the exit, pause, and reset. In-game cutting, dynamic fragments,
+enemies, and machinery remain later milestones.
 
 Gameplay and simulation use high-level, strictly typed Maylang. Python is limited
-to development tooling. The first graphical client will use Maylang's native UI;
-C FFI is reserved for a small adapter if profiling justifies it.
+to development tooling. The graphical client uses Maylang's native UI adapter;
+the world, controller, timing, projection and polygon fill all remain Maylang.
 
 ## Start
 
@@ -29,6 +29,38 @@ python3 tools/dev.py check
 python3 tools/dev.py test
 python3 tools/dev.py run
 ```
+
+Launch the native movement lab:
+
+```sh
+python3 tools/dev.py run workshop
+```
+
+Move with **A/D** or **Left/Right**, jump with **Space/W/Up**, pause with **P**,
+reset with **R**, and close with **Esc**. Normal play pauses when focus is lost.
+The training course currently uses static axis-aligned rectangle collisions;
+arbitrary cut fragments are not yet wired into the controller.
+
+The native target needs the host C compiler and X11/Xi/Xcursor/OpenGL development
+libraries. Interactive play needs X11/XWayland and OpenGL 4.3. A vendored,
+OFL-licensed IBM Plex Mono font keeps runtime font reads inside the workspace;
+the helper selects it automatically. Attribution is in
+[assets/fonts/SOURCE.json](assets/fonts/SOURCE.json) and
+[the font license](assets/fonts/OFL.txt).
+
+Render and test without opening a window:
+
+```sh
+python3 tools/dev.py run render-check
+python3 tools/dev.py run workshop -- --headless --demo --ticks 600 --snapshot build/workshop.png --report build/workshop.json
+```
+
+`--demo` follows a deterministic traversal. Without `--demo`, a headless run
+leaves the player at spawn. Native autoplay can also run with `--ticks 600` and
+does not pause on focus loss. `--report` records the tick count, result, deaths,
+renderer, frame count, wall time and discarded catch-up time. Generated previews
+stay in ignored `build/`; the default `run` target remains the original model
+smoke demonstration so CI does not need a display.
 
 All generated files and temporary data stay in this workspace. The helper ignores
 the inherited `MAYC` and `MAYLANG_STDLIB`, which may point at an older installation.

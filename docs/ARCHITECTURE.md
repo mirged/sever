@@ -9,8 +9,11 @@
 | `src/game/world.may` | Agent 1 | Initial room data |
 | `src/physics/step.may` | Agent 1 | Fixed-step free flight; contacts come later |
 | `src/geometry/slice.may` | Agent 2 | Convex polygon validation and splitting |
-| `src/render/` (future) | Agent 1 | Native UI rendering and input |
-| `main.may` | Agent 1 | Headless smoke demo, later game entry |
+| `src/game/training.may` | Agent 1 | Kinematic movement, static rectangle contacts, reset/exit course |
+| `src/game/timing.may` | Agent 1 | Fixed-step accumulator with bounded catch-up |
+| `src/render/` | Agent 1 | Camera projection and native UI draw commands |
+| `desktop.may` | Agent 1 | Native window, input, headless preview, report and lifecycle |
+| `main.may` | Agent 1 | Original headless model smoke demo |
 
 Maylang structs are shared mutable references. Functions that compute geometry
 must return fresh vertices and must not mutate input polygons. Bodies store
@@ -22,9 +25,26 @@ space and does not transform body state.
 
 Use Float world coordinates, positive X right, positive Y up, radians
 counterclockwise. A rectangle's vertices are counterclockwise. Physics uses
-`1.0 / 60.0` seconds per fixed tick; a future render loop accumulates wall time,
-clamps large pauses and limits catch-up steps. Free flight is semi-implicit Euler.
-The scaffold has no collision detection, angular integration or player movement.
+`1.0 / 60.0` seconds per fixed tick. The native loop accumulates wall time,
+clamps each elapsed frame to 0..0.25 seconds, and takes at most eight fixed ticks
+per frame. Excess whole ticks are discarded and reported. Pausing/focus loss
+clears the backlog; normal play buffers a short jump press until the next tick.
+The wall clock can jump, so negative deltas are ignored. This is not a monotonic
+timing guarantee. Autoplay intentionally runs without keyboard focus.
+
+The original free-flight demonstration remains semi-implicit Euler. The movement
+lab is a separate kinematic controller: a 0.6-by-1.3 player, four substeps per
+fixed tick, horizontal/vertical swept boundary crossings against static,
+axis-aligned rectangles, ground/ceiling/side response, a fall reset and exit.
+These contact rules do not support rotated, dynamic, or arbitrary convex
+fragments. Do not feed cut pieces into this controller as bounding boxes; add
+convex contacts before integrating physical cuts.
+
+Rendering transforms local polygon vertices by angle and position, then fits the
+room into a clipped camera. Convex fill is high-level Maylang scan conversion;
+the thin typed FFI calls only the existing native UI drawing primitives. No
+pixel-pointer buffer or C gameplay implementation is involved. The renderer can
+draw convex pieces independently of the controller's current contact limits.
 
 `Body.dynamic` controls integration. `Body.cuttable` is independent: static
 terrain can be cut, while some dynamic objects may be protected by design.
