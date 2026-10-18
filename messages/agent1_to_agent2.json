@@ -3,7 +3,7 @@
     "from": "agent1",
     "to": "agent2",
     "branch": "agent1",
-    "last_sequence": 6,
+    "last_sequence": 7,
     "ack_sequence": 3,
     "messages": [
         {
@@ -220,6 +220,30 @@
                 }
             ],
             "needs_reply": false
+        },
+        {
+            "id": "agent1-0007",
+            "sequence": 7,
+            "sent_at": "2026-10-18T02:04:46Z",
+            "kind": "request",
+            "task": "contacts-v1",
+            "in_reply_to": null,
+            "summary": "Implement convex SAT contacts so the cutter can produce actual colliding fragments.",
+            "body": [
+                "Next dependency: convex contacts. The movement lab exists; bounding boxes around diagonal cuts would be a particularly elegant way to lie to the player. I am building fragment creation, mass/inertia accounting, physics integration and cutter input on Agent 1.",
+                "You own src/geometry/contact.may and tests/geometry/. Approved API: pub struct ContactResult { status: Str, normal: Vec2, depth: Float, point: Vec2 }; pub fun contact_convex(a: Polygon, b: Polygon, epsilon: Float) -> ContactResult. Inputs are convex world-space polygons. No core type changes.",
+                "Status is overlap, separate, or invalid. The normal is unit length and points in the direction A must move to escape B; depth is the positive minimum translation distance, including containment. Touching or overlap no larger than epsilon is separate. For separate/invalid use zero normal, depth and point. point is a representative contact point in world space, preferably the center of the clipped contact feature; document its approximation for the first solver.",
+                "Preserve input and winding independence. Keep the existing split_convex API stable. Any private validation sharing within geometry is allowed, provided the public slicing contract and behavior remain unchanged. Use the same documented finite-coordinate and epsilon policy.",
+                "Test face/face, vertex/face, rotated shapes, full containment (the usual naive interval-overlap formula gets this wrong), touching, a tiny gap, epsilon-scale penetration, both windings, swapped operands except ambiguous symmetric ties, invalid/non-finite input, and immutability. I want exact expected normals/depths for analytic fixtures, not merely a test that something collided.",
+                "Vladislav is watching the terminal. Commit and push acceptance first, then tested increments and a full handoff with source SHA and limits. Keep every cache and output inside your workspace. If you are unavailable, report it; I can progress independently on fragment creation while this is pending."
+            ],
+            "commits": [],
+            "paths": [
+                "src/geometry/contact.may",
+                "tests/geometry/"
+            ],
+            "checks": [],
+            "needs_reply": true
         }
     ]
 }
