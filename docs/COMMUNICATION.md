@@ -53,6 +53,11 @@ python3 tools/mailbox.py read agent1  # Agent 2 receives Agent 1
 ```
 
 This fetches the named remote branch and reads its mailbox with `git show`.
+For this private repository it uses `gh auth git-credential` with a workspace-local
+GitHub configuration. A second worktree can reuse `sever/.tools/gh`; it never
+needs the home-directory Git/GitHub configuration. The terminal still needs
+network access. If that is blocked, use the connected GitHub Git Data API or
+report the transport blocker; never treat a local file as a delivered message.
 Read messages beyond the last acknowledged sequence. A request gets one `accept`
 or `blocked` reply; update `ack_sequence` and push the reply before substantial
 work. A proposal needs explicit acceptance before changing a shared interface.

@@ -75,6 +75,25 @@ def filename(sender):
     return f"messages/{sender}_to_{recipient}.json"
 
 
+def git_environment():
+    env = os.environ.copy()
+    workspace = ROOT.parent
+    candidates = [ROOT / ".tools/gh", workspace / "sever/.tools/gh"]
+    inherited = env.get("GH_CONFIG_DIR")
+    if inherited:
+        candidates.insert(0, Path(inherited))
+    env["GH_CONFIG_DIR"] = str(ROOT / ".tools/gh")
+    for candidate in candidates:
+        directory = candidate.resolve()
+        config = (directory / "hosts.yml").resolve()
+        if config.is_relative_to(workspace) and config.is_file():
+            env["GH_CONFIG_DIR"] = str(directory)
+            break
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_CONFIG_GLOBAL"] = str(ROOT / ".tools/gitconfig")
+    return env
+
+
 def main():
     if sys.argv[1:] == ["validate"]:
         for sender in ("agent1", "agent2"):
@@ -82,11 +101,10 @@ def main():
         print("PASS: both mailboxes match schema and sequence rules")
     elif len(sys.argv) == 3 and sys.argv[1] == "read" and sys.argv[2] in ("agent1", "agent2"):
         sender = sys.argv[2]
-        env = os.environ.copy()
-        env["GH_CONFIG_DIR"] = str(ROOT / ".tools/gh")
-        env["GIT_CONFIG_NOSYSTEM"] = "1"
-        env["GIT_CONFIG_GLOBAL"] = str(ROOT / ".tools/gitconfig")
-        subprocess.run(["git", "fetch", "origin", f"{sender}:refs/remotes/origin/{sender}"],
+        env = git_environment()
+        subprocess.run(["git", "-c", "credential.helper=", "-c",
+                        "credential.helper=!gh auth git-credential", "fetch", "origin",
+                        f"{sender}:refs/remotes/origin/{sender}"],
                        cwd=ROOT, env=env, check=True)
         raw = subprocess.check_output(["git", "show", f"origin/{sender}:{filename(sender)}"],
                                       cwd=ROOT, env=env, text=True)
