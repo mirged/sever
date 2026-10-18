@@ -1,0 +1,39 @@
+/// World coordinates use metres, positive Y up.
+pub struct Vec2 {
+    x: Float,
+    y: Float
+}
+
+/// Convex local-space outline; vertices have a consistent winding.
+pub struct Polygon {
+    vertices: List<Vec2>
+}
+
+/// Geometry is local; position and angle place a body in the world.
+pub struct Body {
+    id: Int,
+    shape: Polygon,
+    position: Vec2,
+    velocity: Vec2,
+    angle: Float,
+    angular_velocity: Float,
+    dynamic: Bool,
+    cuttable: Bool,
+    material: Str
+}
+
+/// Cable constraints and severing are a later milestone.
+pub struct Cable {
+    id: Int,
+    anchor_a: Vec2,
+    anchor_b: Vec2,
+    attached_body_id: Int,
+    intact: Bool
+}
+
+pub struct World {
+    bodies: List<Body>,
+    cables: List<Cable>,
+    gravity: Vec2,
+    tick: Int
+}

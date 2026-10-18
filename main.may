@@ -1,0 +1,15 @@
+import "src/core/types.may";
+import "src/game/world.may";
+import "src/physics/step.may";
+
+let world: World = workshop_world();
+print("sever / model scaffold");
+print("Bodies:", len(world.bodies), "Cables:", len(world.cables));
+print("Simulating 60 fixed ticks of free flight...");
+for tick: Int in 0..60 {
+    step_world(world);
+}
+let debris: Body = world.bodies[2];
+print("Ticks:", world.tick);
+print("Debris position:", debris.position.x, debris.position.y);
+print("Next: convex slicing, native UI, contacts, and the first playable room.");

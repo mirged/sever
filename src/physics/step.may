@@ -1,0 +1,19 @@
+import "../core/types.may";
+import "../core/math.may";
+
+pub fun fixed_dt() -> Float {
+    return 1.0 / 60.0;
+}
+
+/// One free-flight tick. No contacts, rotation, or cable constraints yet.
+pub fun step_world(world: World) -> Nil {
+    let dt: Float = fixed_dt();
+    for body: Body in world.bodies {
+        if (body.dynamic) {
+            body.velocity = add(body.velocity, scale(world.gravity, dt));
+            body.position = add(body.position, scale(body.velocity, dt));
+        }
+    }
+    world.tick += 1;
+    return;
+}

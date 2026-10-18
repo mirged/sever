@@ -1,0 +1,46 @@
+import "types.may";
+
+pub fun add(a: Vec2, b: Vec2) -> Vec2 {
+    return Vec2(a.x + b.x, a.y + b.y);
+}
+
+pub fun subtract(a: Vec2, b: Vec2) -> Vec2 {
+    return Vec2(a.x - b.x, a.y - b.y);
+}
+
+pub fun scale(value: Vec2, factor: Float) -> Vec2 {
+    return Vec2(value.x * factor, value.y * factor);
+}
+
+pub fun dot(a: Vec2, b: Vec2) -> Float {
+    return a.x * b.x + a.y * b.y;
+}
+
+pub fun cross(a: Vec2, b: Vec2) -> Float {
+    return a.x * b.y - a.y * b.x;
+}
+
+/// Translate to the first vertex to reduce cancellation far from the origin.
+pub fun signed_area(shape: Polygon) -> Float {
+    let count: Int = len(shape.vertices);
+    if (count < 3) {
+        return 0.0;
+    }
+    let origin: Vec2 = shape.vertices[0];
+    mut twice_area: Float = 0.0;
+    for i: Int in 1..(count - 1) {
+        twice_area += cross(subtract(shape.vertices[i], origin),
+            subtract(shape.vertices[i + 1], origin));
+    }
+    return twice_area * 0.5;
+}
+
+/// Counterclockwise rectangle centred on the local origin.
+pub fun rectangle(width: Float, height: Float) -> Polygon {
+    if (not (width > 0.0 and height > 0.0)) {
+        fail("rectangle dimensions must be positive");
+    }
+    let x: Float = width * 0.5;
+    let y: Float = height * 0.5;
+    return Polygon([Vec2(-x, -y), Vec2(x, -y), Vec2(x, y), Vec2(-x, y)]);
+}

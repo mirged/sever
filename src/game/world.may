@@ -1,0 +1,14 @@
+import "../core/types.may";
+import "../core/math.may";
+
+/// Seed data for the future workshop room; no constraints or contacts yet.
+pub fun workshop_world() -> World {
+    let floor: Body = Body(1, rectangle(16.0, 1.0), Vec2(0.0, -0.5),
+        Vec2(0.0, 0.0), 0.0, 0.0, false, true, "concrete");
+    let slab: Body = Body(2, rectangle(6.0, 0.5), Vec2(0.0, 4.0),
+        Vec2(0.0, 0.0), 0.0, 0.0, false, true, "steel");
+    let debris: Body = Body(3, rectangle(0.5, 0.5), Vec2(-3.0, 3.0),
+        Vec2(2.0, 0.0), 0.0, 0.0, true, true, "wood");
+    let cable: Cable = Cable(1, Vec2(0.0, 7.0), Vec2(0.0, 4.0), 2, true);
+    return World([floor, slab, debris], [cable], Vec2(0.0, -9.81), 0);
+}

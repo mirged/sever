@@ -1,0 +1,64 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/game/world.may";
+import "../../src/physics/step.may";
+
+fun expect(value: Bool, label: Str) -> Nil {
+    if (not value) {
+        fail("FAIL: " + label);
+    }
+    return;
+}
+
+fun near(actual: Float, expected: Float) -> Bool {
+    let difference: Float = actual - expected;
+    return difference > -0.000001 and difference < 0.000001;
+}
+
+let shape: Polygon = rectangle(6.0, 0.5);
+expect(len(shape.vertices) == 4, "rectangle has four vertices");
+expect(near(signed_area(shape), 3.0), "rectangle area and winding");
+let clockwise: Polygon = Polygon([Vec2(0.0, 0.0), Vec2(0.0, 2.0), Vec2(2.0, 0.0)]);
+expect(near(signed_area(clockwise), -2.0), "clockwise area is negative");
+let translated: Polygon = Polygon([Vec2(10000.0, 10000.0), Vec2(10002.0, 10000.0),
+    Vec2(10002.0, 10002.0), Vec2(10000.0, 10002.0)]);
+expect(near(signed_area(translated), 4.0), "area ignores translation");
+expect(near(signed_area(Polygon([])), 0.0), "empty outline has zero area");
+expect(near(dot(Vec2(2.0, 3.0), Vec2(4.0, 5.0)), 23.0), "dot product");
+expect(near(cross(Vec2(1.0, 0.0), Vec2(0.0, 1.0)), 1.0), "cross orientation");
+
+mut rejected: Bool = false;
+may {
+    rectangle(0.0, 1.0);
+} otherwise {
+    rejected = true;
+}
+expect(rejected, "reject zero-size rectangle");
+
+let world: World = workshop_world();
+expect(len(world.bodies) == 3 and len(world.cables) == 1, "workshop seed");
+expect(world.bodies[0].cuttable and not world.bodies[0].dynamic,
+    "static terrain remains cuttable");
+step_world(world);
+let debris: Body = world.bodies[2];
+expect(world.tick == 1, "one fixed tick");
+expect(near(debris.velocity.y, -9.81 / 60.0), "gravity changes velocity");
+expect(near(debris.position.y, 3.0 - 9.81 / 3600.0), "semi-implicit position");
+expect(near(world.bodies[0].position.y, -0.5), "static floor stays fixed");
+expect(near(world.bodies[1].position.y, 4.0), "static slab stays fixed");
+for tick: Int in 1..60 {
+    step_world(world);
+}
+expect(world.tick == 60, "sixty ticks");
+expect(near(debris.position.x, -1.0), "horizontal travel over one second");
+expect(near(debris.velocity.y, -9.81), "gravity after one second");
+expect(near(debris.position.y, -1.98675), "discrete free-flight trajectory");
+
+let repeat: World = workshop_world();
+for tick: Int in 0..60 {
+    step_world(repeat);
+}
+expect(near(repeat.bodies[2].position.y, debris.position.y), "repeatable simulation");
+repeat.bodies[2].position.x = 99.0;
+expect(near(debris.position.x, -1.0), "worlds do not share positions");
+print("PASS: 21 model checks");
