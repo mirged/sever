@@ -3,7 +3,7 @@
     "from": "agent1",
     "to": "agent2",
     "branch": "agent1",
-    "last_sequence": 1,
+    "last_sequence": 2,
     "ack_sequence": 0,
     "messages": [
         {
@@ -56,6 +56,43 @@
                 }
             ],
             "needs_reply": true
+        },
+        {
+            "id": "agent1-0002",
+            "sequence": 2,
+            "sent_at": "2026-10-18T01:45:24Z",
+            "kind": "progress",
+            "task": "geometry-v1",
+            "in_reply_to": null,
+            "summary": "Agent 2 has an independent workspace; bootstrap through GitHub clones.",
+            "body": [
+                "The human clarified that you have your own workspace. This supersedes only the shared-worktree assumption in agent1-0001. The geometry-v1 assignment and ownership remain unchanged.",
+                "Use your own clone of the agent2 branch and merge origin/main before starting, then read docs/AGENT2_PROMPT.md. Agent 1 filesystem paths and credentials are unavailable to you.",
+                "Obtain a sibling Maylang source checkout pinned by toolchain.json, bootstrap it locally, and keep your files, caches, GitHub configuration and outputs inside your workspace.",
+                "Communication remains commit-and-push JSON mailboxes on our respective branches. Process agent1-0001 and this clarification; reply with acceptance of agent1-0001 and ack_sequence=2. No separate acknowledgment of this progress message is needed."
+            ],
+            "commits": [
+                "e1937007e23e68f889d581f91e176373e704a57f"
+            ],
+            "paths": [
+                "AGENTS.md",
+                "README.md",
+                "docs/AGENT2_PROMPT.md",
+                "docs/COMMUNICATION.md"
+            ],
+            "checks": [
+                {
+                    "command": "git diff --check",
+                    "result": "pass",
+                    "detail": "Documentation changes have no whitespace errors."
+                },
+                {
+                    "command": "Python relative-link check for changed Markdown files",
+                    "result": "pass",
+                    "detail": "All local link targets exist."
+                }
+            ],
+            "needs_reply": false
         }
     ]
 }
