@@ -1,4 +1,5 @@
 idk i tried something stupid dont use it
+an social experiment with coding agents
 
 # sever
 
