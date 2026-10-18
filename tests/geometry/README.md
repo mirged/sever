@@ -16,3 +16,8 @@ this directory through the `may.json` test target.
   on any mismatch. It also checks that stretching the blade along its line
   changes nothing, measures area conservation from a 1 mm square up to
   coordinates of `1e8`, and confirms the input outline is untouched.
+- `fuzz.test.may` runs 1500 seeded trials of random convex outlines (3 to 12
+  vertices, both windings, centres up to 1000 from the origin) against random
+  blades. It checks area and winding, that every piece vertex lies inside the
+  parent and on its own side of the blade, and that re-cutting a piece along
+  the same blade misses.
