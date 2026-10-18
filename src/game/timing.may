@@ -1,0 +1,33 @@
+import "../physics/step.may";
+
+pub struct StepClock {
+    remainder: Float,
+    dropped_seconds: Float
+}
+
+pub fun create_clock() -> StepClock {
+    return StepClock(0.0, 0.0);
+}
+
+/// Clamp wall-clock discontinuities and cap catch-up at eight fixed ticks.
+pub fun advance_clock(timer: StepClock, elapsed: Float, paused: Bool) -> Int {
+    if (paused) {
+        timer.remainder = 0.0;
+        return 0;
+    }
+    let frame: Float = float(max(0.0, min(0.25, elapsed)));
+    timer.dropped_seconds += float(max(0.0, elapsed - frame));
+    timer.remainder += frame;
+    mut due: Int = 0;
+    while (timer.remainder + 0.000000001 >= fixed_dt() and due < 8) {
+        timer.remainder = float(max(0.0, timer.remainder - fixed_dt()));
+        due += 1;
+    }
+    if (due == 8 and timer.remainder >= fixed_dt()) {
+        let discarded: Int = int(timer.remainder / fixed_dt());
+        let seconds: Float = float(discarded) * fixed_dt();
+        timer.dropped_seconds += seconds;
+        timer.remainder -= seconds;
+    }
+    return due;
+}

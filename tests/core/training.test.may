@@ -1,0 +1,74 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/game/training.may";
+import "../../src/game/timing.may";
+
+fun expect_training(value: Bool, label: Str) -> Nil {
+    if (not value) { fail("FAIL: " + label); }
+    return;
+}
+
+fun training_near(a: Float, b: Float) -> Bool {
+    return a - b > -0.000001 and a - b < 0.000001;
+}
+
+let idle: Training = create_training();
+for tick: Int in 0..120 { step_training(idle, Controls(0, false)); }
+expect_training(idle.player.grounded, "resting on the floor");
+expect_training(training_near(idle.player.position.y, 0.65), "no sinking at rest");
+step_training(idle, Controls(0, true));
+expect_training(idle.player.velocity.y > 0.0 and not idle.player.grounded, "jump from ground");
+let after_jump: Float = idle.player.velocity.y;
+step_training(idle, Controls(0, true));
+expect_training(idle.player.velocity.y < after_jump, "no double jump");
+for tick: Int in 0..90 { step_training(idle, Controls(0, false)); }
+expect_training(idle.player.grounded, "land after jumping");
+
+let right: Training = create_training();
+step_training(right, Controls(99, false));
+expect_training(training_near(right.player.velocity.x, 5.5), "clamp horizontal input");
+expect_training(right.player.position.x > -6.0, "move right");
+step_training(right, Controls(-1, false));
+expect_training(right.player.velocity.x < 0.0, "move left");
+
+let wall: Body = Body(100, rectangle(1.0, 5.0), Vec2(-4.0, 2.0),
+    Vec2(0.0, 0.0), 0.0, 0.0, false, false, "test");
+push(right.world.bodies, wall);
+for tick: Int in 0..60 { step_training(right, Controls(1, false)); }
+expect_training(training_near(right.player.position.x, -4.8), "side collision stops penetration");
+
+let ceiling: Training = create_training();
+push(ceiling.world.bodies, Body(101, rectangle(3.0, 0.4), Vec2(-6.0, 1.8),
+    Vec2(0.0, 0.0), 0.0, 0.0, false, false, "test"));
+mut highest: Float = 0.0;
+for tick: Int in 0..30 {
+    step_training(ceiling, Controls(0, tick == 0));
+    highest = float(max(highest, ceiling.player.position.y));
+}
+expect_training(highest <= 0.950001, "ceiling contact stops upward travel");
+
+let fall: Training = create_training();
+fall.player.position = Vec2(4.0, -4.9);
+fall.player.velocity.y = -20.0;
+step_training(fall, Controls(0, false));
+expect_training(fall.player.deaths == 1, "fall counts one respawn");
+expect_training(training_near(fall.player.position.x, -6.0), "respawn at start");
+expect_training(fall.player.grounded, "respawn on ground");
+
+let demo: Training = create_training();
+for tick: Int in 0..600 { step_training(demo, demo_controls(demo)); }
+expect_training(demo.player.finished, "demo reaches exit through the platforms");
+expect_training(demo.player.deaths == 0, "demo needs no respawn");
+let finish_x: Float = demo.player.position.x;
+step_training(demo, Controls(-1, true));
+expect_training(training_near(finish_x, demo.player.position.x), "completed run stays complete");
+
+let timer: StepClock = create_clock();
+expect_training(advance_clock(timer, 1.0 / 120.0, false) == 0, "accumulate partial tick");
+expect_training(advance_clock(timer, 1.0 / 120.0, false) == 1, "two half ticks make one");
+expect_training(advance_clock(timer, -2.0, false) == 0, "ignore backward clock adjustment");
+expect_training(advance_clock(timer, 2.0, false) == 8, "bounded catch-up");
+expect_training(timer.dropped_seconds > 1.8, "record discarded pause time");
+expect_training(advance_clock(timer, 100.0, true) == 0 and training_near(timer.remainder, 0.0), "pause clears backlog");
+expect_training(advance_clock(timer, 1.0 / 60.0, false) == 1, "resume without a time jump");
+print("PASS: 23 training and timing checks");
