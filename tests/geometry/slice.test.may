@@ -84,6 +84,23 @@ expect_split(triangle, apex, 4.0, 4.0, "vertex to edge");
 expect(len(apex.pieces[0].vertices) == 3 and len(apex.pieces[1].vertices) == 3,
     "vertex-to-edge cut makes triangles");
 expect_split(box, cut(box, 0.0, 0.0, 2.0, 2.0), 2.0, 2.0, "blade ends exactly on both vertices");
+// A blade passing within epsilon of a vertex snaps to it instead of making a
+// crossing a hair away from it: the pieces are triangles on the original corners.
+// Check both sides: the corners fall just left of the first blade and just right of the second.
+let snapped_low: SliceResult = cut(box, -1.0, -1.0 - 0.0000004, 3.0, 3.0 - 0.0000004);
+expect_split(box, snapped_low, 2.0, 2.0, "near-vertex blade on the other side snaps too");
+expect(len(snapped_low.pieces[0].vertices) == 3 and len(snapped_low.pieces[1].vertices) == 3,
+    "snapped cut on the other side makes triangles");
+let snapped: SliceResult = cut(box, -1.0, -1.0 + 0.0000004, 3.0, 3.0 + 0.0000004);
+expect_split(box, snapped, 2.0, 2.0, "near-vertex blade snaps to the vertices");
+expect(len(snapped.pieces[0].vertices) == 3 and len(snapped.pieces[1].vertices) == 3,
+    "snapped cut makes triangles");
+for piece: Polygon in snapped.pieces {
+    for vertex: Vec2 in piece.vertices {
+        expect((vertex.x == 0.0 or vertex.x == 2.0) and (vertex.y == 0.0 or vertex.y == 2.0),
+            "snapped pieces reuse exact corner coordinates");
+    }
+}
 expect_split(box, cut(box, 0.0, 1.0, 2.0, 1.0), 2.0, 2.0, "blade ends exactly on the boundary");
 
 // The blade is a finite segment.
@@ -117,6 +134,13 @@ let strip: Polygon = rectangle(1.0, 0.00001);
 expect_split(strip, cut(strip, 0.0, -1.0, 0.0, 1.0), 0.000005, 0.000005, "thin input splits across");
 expect_status(cut(strip, -1.0, 0.0, 1.0, 0.0), "split", "thin input splits along its length");
 
+// Cutting just past a very obtuse vertex would leave the crossing within
+// epsilon of the neighbouring edge's line; that piece would be invalid input,
+// so the cut misses. Slightly farther away it splits.
+let obtuse: Polygon = Polygon([Vec2(-2.0, 0.0), Vec2(0.0, 0.0), Vec2(2.0, 0.001), Vec2(2.0, 2.0), Vec2(-2.0, 2.0)]);
+expect_status(cut(obtuse, 0.001, -1.0, 0.001, 3.0), "miss", "near-collinear piece beside an obtuse vertex");
+expect_status(cut(obtuse, 0.01, -1.0, 0.01, 3.0), "split", "clear of the obtuse vertex");
+
 // Far from the origin with a scale-appropriate tolerance.
 let far: Polygon = Polygon([Vec2(1000000.0, 1000000.0), Vec2(1000002.0, 1000000.0),
     Vec2(1000002.0, 1000002.0), Vec2(1000000.0, 1000002.0)]);
@@ -133,6 +157,8 @@ expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(2.0, 0.0), Vec2(
     -1.0, 1.0, 3.0, 1.0), "invalid", "duplicate vertex");
 expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(1.0, 0.0), Vec2(2.0, 0.0), Vec2(2.0, 2.0), Vec2(0.0, 2.0)]),
     -1.0, 1.0, 3.0, 1.0), "invalid", "collinear middle vertex");
+expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(2.0, 2.0)]),
+    -1.0, 1.0, 3.0, 1.0), "invalid", "duplicate first vertex (zero-length first edge)");
 expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(1.0, 0.5), Vec2(2.0, 2.0), Vec2(0.0, 2.0)]),
     -1.0, 1.0, 3.0, 1.0), "invalid", "concave outline");
 expect_status(cut(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 2.0), Vec2(2.0, 0.0), Vec2(0.0, 2.0)]),
