@@ -15,6 +15,8 @@
 | `src/physics/transforms.may` | Agent 1 | Body/world transforms and finite motion guards |
 | `src/physics/material.may` | Agent 1 | Material density |
 | `src/physics/rigid.may` | Agent 1 | Broad phase, rigid integration, impulses and convex character contacts |
+| `src/spells/` | Agent 2 | Spell effects, mana/cooldowns, resonance and teleport clearance |
+| `src/game/magic.may` | Agent 1 | Native casting state, selection/aim, shared cutter counters and effect trails |
 | `src/game/cutter.may` | Agent 1 | Fragment construction, ownership, velocity, budgets and cable release |
 | `src/game/timing.may` | Agent 1 | Fixed-step accumulator with bounded catch-up |
 | `src/render/` | Agent 1 | Camera projection, 60 Hz render deadlines and native UI draw commands |

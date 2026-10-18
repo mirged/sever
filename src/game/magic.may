@@ -1,0 +1,85 @@
+import "../core/types.may";
+import "../core/math.may";
+import "../physics/transforms.may";
+import "../spells/spells.may" as spell;
+import "training.may";
+
+/// Casting state belongs to the client, keeping Training free of import cycles.
+pub struct MagicState {
+    book: spell.Spellbook,
+    selected: Int,
+    target: Vec2,
+    blades: List<spell.Blade>,
+    trail_ticks: Int,
+    resonance_ticks: Int,
+    status: Str
+}
+
+pub fun create_magic(training: Training) -> MagicState {
+    return MagicState(spell.create_spellbook(), 0,
+        add(training.player.position, Vec2(3.5, 0.0)), [], 0, 0, "READY");
+}
+
+pub fun select_spell(magic: MagicState, index: Int) -> Nil {
+    if (index >= 0 and index < len(magic.book.cooldowns)) { magic.selected = index; }
+    return;
+}
+
+pub fun aim_magic(training: Training, magic: MagicState, target: Vec2) -> Nil {
+    if (bounded_number(target.x, 1000.0) and bounded_number(target.y, 1000.0)) {
+        magic.target = Vec2(target.x, target.y);
+        aim_training(training, target);
+    }
+    return;
+}
+
+pub fun tick_magic(magic: MagicState) -> Nil {
+    spell.tick_spellbook(magic.book);
+    magic.trail_ticks = int(max(0, magic.trail_ticks - 1));
+    magic.resonance_ticks = int(max(0, magic.resonance_ticks - 1));
+    return;
+}
+
+/// Share fragment IDs and counters with the ordinary blade; only casts add VFX.
+pub fun cast_selected(training: Training, magic: MagicState) -> Nil {
+    if (training.player.finished) { magic.status = "CROSSING COMPLETE"; return; }
+    let name: Str = spell.spell_catalogue()[magic.selected].name;
+    let origin: Vec2 = Vec2(training.player.position.x, training.player.position.y);
+    let result: spell.SpellReport = spell.cast_spell(training.world, training.player,
+        magic.book, name, magic.target, training.cutter.next_id);
+    magic.status = name + " / " + result.status;
+    if (result.status != "cast") { return; }
+    training.cutter.next_id = result.next_id;
+    training.cutter.cuts += result.cuts;
+    training.cutter.cables += result.cables;
+    training.cutter.status = "SPELL / " + name;
+    training.cutter.trail_ticks = 0;
+    if (name == "blink" or name == "rift") {
+        magic.blades = [spell.Blade(origin,
+            Vec2(training.player.position.x, training.player.position.y))];
+    } else {
+        magic.blades = spell.spell_blades(name, origin, magic.target);
+    }
+    magic.trail_ticks = 12;
+    magic.resonance_ticks = if (result.resonance) { 30 } else { 0 };
+    return;
+}
+
+/// A repeatable spell sequence: blink, a resonating lance, then shatter the slab.
+pub fun demo_magic(training: Training, magic: MagicState) -> Nil {
+    if (magic.book.casts == 0) {
+        select_spell(magic, 3);
+        aim_magic(training, magic, Vec2(-2.0, 0.65));
+        cast_selected(training, magic);
+    } else if (magic.book.casts == 1) {
+        select_spell(magic, 1);
+        aim_magic(training, magic, add(training.player.position, Vec2(0.0, 8.0)));
+        cast_selected(training, magic);
+    } else if (magic.book.casts == 2 and training.player.position.x > 0.5
+            and training.player.position.x < 2.5 and training.player.position.y > 2.5) {
+        select_spell(magic, 2);
+        aim_magic(training, magic, Vec2(training.player.position.x, 6.025));
+        cast_selected(training, magic);
+    }
+    return;
+}

@@ -1,0 +1,303 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/game/training.may";
+import "../../src/geometry/mass.may";
+import "../../src/spells/spells.may";
+
+let EXACT: Float = 0.000000000001;
+mut checks: Int = 0;
+
+fun expect(value: Bool, label: Str) -> Nil {
+    if (not value) {
+        fail("FAIL: " + label);
+    }
+    checks += 1;
+    return;
+}
+
+fun near(actual: Float, expected: Float, tolerance: Float) -> Bool {
+    let difference: Float = actual - expected;
+    return difference >= -tolerance and difference <= tolerance;
+}
+
+fun near_point(p: Vec2, x: Float, y: Float, tolerance: Float) -> Bool {
+    return near(p.x, x, tolerance) and near(p.y, y, tolerance);
+}
+
+fun total_area(world: World) -> Float {
+    mut area: Float = 0.0;
+    for body: Body in world.bodies {
+        area += mass_properties(body.shape).area;
+    }
+    return area;
+}
+
+fun intact_cables(world: World) -> Int {
+    mut count: Int = 0;
+    for cable: Cable in world.cables {
+        if (cable.intact) {
+            count += 1;
+        }
+    }
+    return count;
+}
+
+/// The training room with the player moved to `x, y`, standing still.
+fun room_at(x: Float, y: Float) -> Training {
+    let room: Training = create_training();
+    room.player.position = Vec2(x, y);
+    room.player.velocity = Vec2(0.0, 0.0);
+    return room;
+}
+
+// Catalogue and starting state.
+let catalogue: List<SpellDef> = spell_catalogue();
+expect(len(catalogue) == 5, "five spells");
+expect(spell_index("arc") == 0 and spell_index("lance") == 1 and spell_index("shatter") == 2
+    and spell_index("blink") == 3 and spell_index("rift") == 4 and spell_index("fireball") == -1,
+    "catalogue order and lookup");
+let fresh: Spellbook = create_spellbook();
+expect(fresh.mana == 100.0 and fresh.max_mana == 100.0 and fresh.casts == 0 and fresh.status == "READY",
+    "fresh spellbook");
+expect(len(fresh.cooldowns) == 5, "one cooldown per spell");
+
+// Blade geometry, exactly.
+let arc: List<Blade> = spell_blades("arc", Vec2(0.0, 0.0), Vec2(10.0, 0.0));
+expect(len(arc) == 3, "arc fires three blades");
+expect(near_point(arc[0].end, 3.0 * cos(0.35), -3.0 * sin(0.35), EXACT)
+    and near_point(arc[1].end, 3.0, 0.0, EXACT)
+    and near_point(arc[2].end, 3.0 * cos(0.35), 3.0 * sin(0.35), EXACT), "arc fan endpoints");
+for blade: Blade in arc {
+    expect(near_point(blade.start, 0.0, 0.0, EXACT), "arc blades start at the caster");
+}
+let lance: List<Blade> = spell_blades("lance", Vec2(1.0, 2.0), Vec2(1.0, -5.0));
+expect(len(lance) == 1 and near_point(lance[0].end, 1.0, -6.0, EXACT), "lance reaches 8 m toward the aim");
+let shatter: List<Blade> = spell_blades("shatter", Vec2(0.0, 0.0), Vec2(2.0, 1.0));
+expect(len(shatter) == 3, "shatter fires three blades");
+for blade: Blade in shatter {
+    let middle: Vec2 = scale(add(blade.start, blade.end), 0.5);
+    let along: Vec2 = subtract(blade.end, blade.start);
+    expect(near_point(middle, 2.0, 1.0, EXACT), "shatter blades cross at the target");
+    expect(near(sqrt(dot(along, along)), 2.4, EXACT), "shatter blades are 2.4 m");
+}
+let first: Vec2 = subtract(shatter[0].end, shatter[0].start);
+let second: Vec2 = subtract(shatter[1].end, shatter[1].start);
+expect(near(dot(first, second) / 5.76, 0.5, EXACT), "shatter blades sit 60 degrees apart");
+expect(len(spell_blades("blink", Vec2(0.0, 0.0), Vec2(1.0, 0.0))) == 0
+    and len(spell_blades("rift", Vec2(0.0, 0.0), Vec2(1.0, 0.0))) == 0, "movement spells fire no fixed blades");
+
+// Lance severs both cables of the suspended slab without cutting any body.
+let hanging: Training = room_at(-3.0, 7.5);
+let hanging_book: Spellbook = create_spellbook();
+let lanced: SpellReport = cast_spell(hanging.world, hanging.player, hanging_book, "lance", Vec2(10.0, 7.5), 100);
+expect(lanced.status == "cast" and lanced.cables == 2 and lanced.cuts == 0, "lance cuts both cables");
+expect(intact_cables(hanging.world) == 0, "no cable left intact");
+mut released: Bool = false;
+for body: Body in hanging.world.bodies {
+    if (body.id == 16) {
+        released = body.dynamic;
+    }
+}
+expect(released, "slab falls once its cables are cut");
+expect(hanging_book.mana == 75.0 and hanging_book.cooldowns[1] == 45 and hanging_book.casts == 1,
+    "lance spends 25 mana and starts a 45-tick cooldown");
+
+// Shatter splinters a platform into several dynamic fragments, conserving area.
+let workshop: Training = room_at(0.0, 0.65);
+let area_before: Float = total_area(workshop.world);
+let count_before: Int = len(workshop.world.bodies);
+let shattered: SpellReport = cast_spell(workshop.world, workshop.player, create_spellbook(), "shatter",
+    Vec2(2.0, 2.2), 100);
+print("shatter | cuts " + str(shattered.cuts) + " | bodies " + str(count_before) + " -> "
+    + str(len(workshop.world.bodies)) + " | area " + str(area_before) + " -> " + str(total_area(workshop.world)));
+expect(shattered.status == "cast" and shattered.cuts >= 3, "shatter makes at least three cuts");
+expect(len(workshop.world.bodies) == count_before + shattered.cuts, "each cut adds exactly one body");
+expect(near(total_area(workshop.world), area_before, 0.000000001 * area_before), "shatter conserves area");
+mut fragments: Int = 0;
+for body: Body in workshop.world.bodies {
+    if (body.id >= 100) {
+        fragments += 1;
+        expect(body.dynamic, "fragments are dynamic");
+        expect(body.position.x > 0.4 and body.position.x < 3.6 and body.position.y > 1.9 and body.position.y < 2.5,
+            "fragments stay where the platform was");
+    }
+}
+expect(fragments == shattered.cuts + 1, "one platform became cuts + 1 fragments");
+expect(shattered.next_id == 100 + 2 * shattered.cuts, "ids advance two per cut");
+
+// Blink backs off until the player's box is clear. Platform 12 spans
+// x in [-3.8, -0.2], y in [0.8, 1.2]; the box is 0.6 x 1.3, so the farthest
+// clear centre on y = 0.65 is x = -4.25, after 0.25 m steps back from 4 m.
+let hop: Training = room_at(-6.0, 0.65);
+let hop_book: Spellbook = create_spellbook();
+hop.player.velocity = Vec2(5.5, -12.0);
+hop.player.grounded = true;
+let hopped: SpellReport = cast_spell(hop.world, hop.player, hop_book, "blink", Vec2(-2.0, 0.65), 100);
+expect(hopped.status == "cast" and near_point(hop.player.position, -4.25, 0.65, EXACT),
+    "blink lands at the farthest clear spot");
+expect(hop.player.velocity.x == 0.0 and hop.player.velocity.y == 0.0 and not hop.player.grounded,
+    "blink arrives at rest and airborne");
+expect(hopped.cuts == 0 and len(hop.world.bodies) == 7, "blink cuts nothing");
+let up: Training = room_at(-6.0, 0.65);
+cast_spell(up.world, up.player, create_spellbook(), "blink", Vec2(-6.0, 50.0), 100);
+expect(near_point(up.player.position, -6.0, 4.65, EXACT), "blink is capped at 4 m");
+let short_hop: Training = room_at(-6.0, 0.65);
+cast_spell(short_hop.world, short_hop.player, create_spellbook(), "blink", Vec2(-7.5, 0.65), 100);
+expect(near_point(short_hop.player.position, -7.5, 0.65, EXACT), "blink stops at a near aim");
+
+// Blink never lands inside anything, over a fan of aims through the room.
+mut landings: Int = 0;
+for k: Int in 0..72 {
+    let angle: Float = 6.283185307179586 * float(k) / 72.0;
+    let fan: Training = room_at(0.0, 3.05);
+    let book: Spellbook = create_spellbook();
+    let result: SpellReport = cast_spell(fan.world, fan.player, book, "blink",
+        Vec2(10.0 * cos(angle), 3.05 + 10.0 * sin(angle)), 100);
+    if (result.status == "cast") {
+        landings += 1;
+        expect(clear_at(fan.world, fan.player.position), "blink landing is clear");
+    } else {
+        expect(result.status == "blocked" and near_point(fan.player.position, 0.0, 3.05, EXACT)
+            and book.mana == 100.0, "blocked blink leaves player and mana alone");
+    }
+}
+expect(landings > 60, "most fan aims find a landing");
+
+// Blink is blocked inside a solid block, and the failure costs nothing.
+let vault: World = World([Body(1, rectangle(20.0, 20.0), Vec2(0.0, 0.0), Vec2(0.0, 0.0), 0.0, 0.0, false, true,
+    "concrete")], [], Vec2(0.0, -24.0), 0);
+let prisoner: Player = Player(Vec2(0.0, 0.0), Vec2(0.0, 0.0), false, false, 0);
+let vault_book: Spellbook = create_spellbook();
+let stuck: SpellReport = cast_spell(vault, prisoner, vault_book, "blink", Vec2(3.0, 0.0), 1);
+expect(stuck.status == "blocked" and vault_book.mana == 100.0 and vault_book.cooldowns[3] == 0
+    and vault_book.casts == 0 and vault_book.status == "blocked", "blocked blink costs nothing");
+expect(prisoner.position.x == 0.0 and prisoner.position.y == 0.0, "blocked blink does not move the player");
+
+// Review fix (agent1-0016): invalid contacts are never clear. A malformed
+// obstacle blocks blink instead of being walked through, and a non-finite
+// caster cannot cast at all.
+let broken: World = World([Body(1, Polygon([Vec2(-1.0, -1.0), Vec2(1.0, -1.0), Vec2(0.0, -0.5), Vec2(1.0, 1.0),
+    Vec2(-1.0, 1.0)]), Vec2(4.0, 0.0), Vec2(0.0, 0.0), 0.0, 0.0, false, true, "concrete")], [], Vec2(0.0, -24.0), 0);
+expect(not clear_at(broken, Vec2(0.0, 0.0)), "a concave obstacle is not provably clear");
+let walker: Player = Player(Vec2(0.0, 0.0), Vec2(0.0, 0.0), false, false, 0);
+let walker_book: Spellbook = create_spellbook();
+expect(cast_spell(broken, walker, walker_book, "blink", Vec2(3.0, 0.0), 1).status == "blocked"
+    and walker.position.x == 0.0 and walker_book.mana == 100.0, "blink refuses to trust an invalid contact");
+let huge_value: Float = 1.0e300;
+let lost_value: Float = huge_value * huge_value - huge_value * huge_value;
+let open_room: World = World([], [], Vec2(0.0, -24.0), 0);
+expect(not clear_at(create_training().world, Vec2(lost_value, 0.0)), "a NaN box is not clear");
+let ghost: Player = Player(Vec2(lost_value, 0.0), Vec2(0.0, 0.0), false, false, 0);
+let ghost_book: Spellbook = create_spellbook();
+expect(cast_spell(open_room, ghost, ghost_book, "blink", Vec2(3.0, 0.0), 1).status == "invalid aim"
+    and ghost_book.mana == 100.0 and ghost_book.casts == 0, "a NaN caster cannot blink");
+let far_caster: Player = Player(Vec2(5000.0, 0.0), Vec2(0.0, 0.0), false, false, 0);
+expect(cast_spell(open_room, far_caster, create_spellbook(), "lance", Vec2(10.0, 0.0), 1).status == "invalid aim",
+    "a caster beyond the world limit cannot cast");
+expect(clear_at(open_room, Vec2(0.0, 0.0)), "an empty room is clear");
+
+// Rift slices its own path: rising through the hanging slab cuts it at x = 1.
+let riser: Training = room_at(1.0, 4.5);
+let riser_book: Spellbook = create_spellbook();
+let rift: SpellReport = cast_spell(riser.world, riser.player, riser_book, "rift", Vec2(1.0, 20.0), 100);
+expect(rift.status == "cast" and rift.cuts == 1, "rift cuts the slab it passes through");
+expect(near_point(riser.player.position, 1.0, 8.5, EXACT), "rift lands 4 m up");
+expect(clear_at(riser.world, riser.player.position), "rift landing is clear after the cut");
+mut halves: Int = 0;
+for body: Body in riser.world.bodies {
+    if (body.id >= 100) {
+        halves += 1;
+        expect(near(mass_properties(body.shape).area, 2.5 * 0.35, 0.000000001), "rift halves are 2.5 m x 0.35 m");
+    }
+}
+expect(halves == 2, "rift leaves two halves");
+expect(riser_book.mana == 55.0 and riser_book.cooldowns[4] == 90, "rift spends 45 mana, 90-tick cooldown");
+
+// Mana, cooldowns, regeneration and the order of failure checks.
+let field: Training = room_at(-6.0, 0.65);
+let book: Spellbook = create_spellbook();
+expect(cast_spell(field.world, field.player, book, "arc", Vec2(-2.0, 0.65), 100).status == "cast", "arc casts");
+expect(book.mana == 80.0 and book.cooldowns[0] == 30, "arc spends 20 mana, 30-tick cooldown");
+expect(cast_spell(field.world, field.player, book, "arc", Vec2(-2.0, 0.65), 100).status == "cooldown",
+    "arc is on cooldown");
+expect(book.mana == 80.0 and book.casts == 1, "a cooldown refusal costs nothing");
+for tick: Int in 0..30 {
+    tick_spellbook(book);
+}
+expect(book.cooldowns[0] == 0 and near(book.mana, 87.5, EXACT), "30 ticks clear the cooldown and regenerate 7.5");
+for tick: Int in 0..100 {
+    tick_spellbook(book);
+}
+expect(book.mana == 100.0, "mana regenerates only up to the cap");
+book.mana = 10.0;
+expect(cast_spell(field.world, field.player, book, "lance", Vec2(5.0, 0.65), 100).status == "no mana",
+    "not enough mana");
+expect(book.mana == 10.0 and book.cooldowns[1] == 0, "a mana refusal costs nothing");
+let huge: Float = 1.0e300;
+let not_a_number: Float = huge * huge - huge * huge;
+let bodies_before: Int = len(field.world.bodies);
+expect(cast_spell(field.world, field.player, book, "fireball", Vec2(5.0, 0.0), 100).status == "unknown spell",
+    "unknown spell");
+expect(cast_spell(field.world, field.player, book, "lance", Vec2(not_a_number, 0.0), 100).status == "invalid aim",
+    "NaN aim");
+expect(cast_spell(field.world, field.player, book, "lance", Vec2(5000.0, 0.0), 100).status == "invalid aim",
+    "aim beyond the world limit");
+expect(cast_spell(field.world, field.player, book, "lance", Vec2(-6.0, 0.6505), 100).status == "no aim",
+    "aim on top of the caster");
+book.mana = 100.0;
+expect(cast_spell(field.world, field.player, book, "shatter", Vec2(2.0, 0.65), 100).status == "out of range",
+    "shatter target beyond 6 m");
+expect(book.status == "out of range" and book.mana == 100.0, "failures only update the status");
+expect(len(field.world.bodies) == bodies_before and intact_cables(field.world) == 2,
+    "failed casts never touch the world");
+
+// Resonance: a different spell within 30 ticks refunds a quarter of its cost.
+let weave: Training = room_at(-6.0, 0.65);
+let weaver: Spellbook = create_spellbook();
+let opener: SpellReport = cast_spell(weave.world, weave.player, weaver, "arc", Vec2(-2.0, 0.65), 100);
+expect(not opener.resonance and weaver.mana == 80.0, "the first cast has nothing to resonate with");
+for tick: Int in 0..30 {
+    tick_spellbook(weaver);
+}
+expect(near(weaver.mana, 87.5, EXACT), "regenerated before the chain");
+let chained: SpellReport = cast_spell(weave.world, weave.player, weaver, "lance", Vec2(5.0, 0.65), 100);
+expect(chained.resonance and near(weaver.mana, 87.5 - 18.75, EXACT), "lance at tick 30 resonates: costs 18.75");
+let again: SpellReport = cast_spell(weave.world, weave.player, weaver, "arc", Vec2(-2.0, 0.65), 100);
+expect(again.resonance and near(weaver.mana, 68.75 - 15.0, EXACT), "arc right after lance resonates: costs 15");
+for tick: Int in 0..31 {
+    tick_spellbook(weaver);
+}
+// Lance is still cooling down (45 ticks), so break the chain with blink.
+let late: SpellReport = cast_spell(weave.world, weave.player, weaver, "blink", Vec2(-7.5, 0.65), 100);
+expect(late.status == "cast" and not late.resonance, "31 ticks later the chain has broken");
+let solo: Training = room_at(-6.0, 0.65);
+let soloist: Spellbook = create_spellbook();
+cast_spell(solo.world, solo.player, soloist, "arc", Vec2(-2.0, 0.65), 100);
+for tick: Int in 0..30 {
+    tick_spellbook(soloist);
+}
+expect(not cast_spell(solo.world, solo.player, soloist, "arc", Vec2(-2.0, 0.65), 100).resonance,
+    "repeating the same spell never resonates");
+
+// Determinism: the same casts on two fresh rooms give identical worlds.
+fun replay() -> Training {
+    let room: Training = room_at(0.0, 0.65);
+    let book: Spellbook = create_spellbook();
+    cast_spell(room.world, room.player, book, "shatter", Vec2(2.0, 2.2), 100);
+    for tick: Int in 0..30 {
+        tick_spellbook(book);
+    }
+    cast_spell(room.world, room.player, book, "arc", Vec2(3.0, 3.0), 200);
+    return room;
+}
+let one: Training = replay();
+let two: Training = replay();
+expect(len(one.world.bodies) == len(two.world.bodies), "replays have the same body count");
+for i: Int in 0..len(one.world.bodies) {
+    let a: Body = one.world.bodies[i];
+    let b: Body = two.world.bodies[i];
+    expect(a.id == b.id and a.position.x == b.position.x and a.position.y == b.position.y
+        and len(a.shape.vertices) == len(b.shape.vertices), "replayed body " + str(i) + " matches");
+}
+
+print("PASS: " + str(checks) + " spell checks");
