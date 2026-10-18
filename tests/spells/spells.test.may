@@ -229,6 +229,16 @@ for bad: Float in bad_values {
         and aimed_book.mana == 100.0 and near_point(aimed.player.position, -6.0, 0.65, EXACT),
         "a non-finite destination is rejected at no cost");
 }
+// agent1-0019 exact reproducers: an empty world never vouches for a centre
+// that is non-finite or beyond the 1000 m bound on either axis.
+let empty_world: World = World([], [], Vec2(0.0, -24.0), 0);
+let far_centres: List<Vec2> = [Vec2(lost_value, 0.0), Vec2(positive_infinity, 0.0), Vec2(negative_infinity, 0.0),
+    Vec2(5000.0, 0.0), Vec2(-5000.0, 0.0), Vec2(0.0, 5000.0), Vec2(0.0, -5000.0), Vec2(1000.5, 0.0)];
+for centre: Vec2 in far_centres {
+    expect(not clear_at(empty_world, centre), "an empty world rejects an unbounded centre");
+}
+expect(clear_at(empty_world, Vec2(0.0, 0.0)) and clear_at(empty_world, Vec2(999.0, -999.0)),
+    "valid empty-world centres stay clear");
 let hollow: Training = create_training();
 push(hollow.world.bodies, Body(500, Polygon([]), Vec2(0.0, 0.0), Vec2(0.0, 0.0), 0.0, 0.0, false, false, "test"));
 expect(not clear_at(hollow.world, Vec2(-5.0, 0.65)), "an empty-outline obstacle fails closed");

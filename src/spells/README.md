@@ -34,8 +34,11 @@ transforms and the geometry contact kernel. It edits no other module.
   `no mana`, `blocked`. A failure changes only `book.status`; the world,
   player, mana and cooldowns are untouched.
 
-## Not done yet
+## Native status
 
-The spells are not bound to keys or drawn in the native workshop. Doing that
-means editing `desktop.may` and `src/game/`, which belong to Agent 1. Tests are
-in [`tests/spells/spells.test.may`](../../tests/spells/spells.test.may).
+Agent 1's native adapter (`src/game/magic.may` and the desktop controls, on
+branch `agent1-spell-ui`) binds 1–5 to select a spell and F to cast at the
+mouse target, and displays mana, cooldowns and resonance. As of this commit it
+is a review candidate and is not yet merged to `main`. This library does not
+depend on it. Tests are in
+[`tests/spells/spells.test.may`](../../tests/spells/spells.test.may).
