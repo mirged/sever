@@ -1,6 +1,8 @@
-# Scaffold validation — 2026-10-18
+# Original scaffold validation — 2026-10-18
 
-This records the original scaffold. See
+Current status: [native cutting prototype and validation](CUTTING_VALIDATION.md).
+
+The remainder records the original scaffold, not the current feature set. See
 [the movement lab validation](WORKSHOP_VALIDATION.md) for the subsequent native
 window, player controller and rendering milestone.
 The cutting kernel's subsequent acceptance is recorded in

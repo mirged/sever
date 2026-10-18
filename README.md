@@ -3,14 +3,15 @@
 A physics platformer about cutting the world apart. Slice platforms into ramps,
 drop machinery by severing cables, dismantle enemies, and turn debris into weapons.
 
-**Status: native movement prototype.** Run and jump through a small platform
-course, reach the exit, pause, and reset. In-game cutting, dynamic fragments,
-enemies, and machinery remain later milestones.
+**Status: native cutting prototype.** Run and jump through the workshop, aim
+with the mouse, and sever platforms or cables with **J**. Cut pieces preserve
+mass and momentum, fall, rotate, and collide with actual convex outlines. Reset
+restores the room. Enemies, machinery and bosses remain future milestones.
 
-The convex cutting kernel is implemented, reviewed and merged as a library.
-See [its contract and numeric limits](src/geometry/README.md) and
-[Agent 1's integration review](docs/GEOMETRY_REVIEW.md). It is not yet connected
-to the movement lab's rectangle-only contact handling.
+The reviewed geometry supports convex polygons and finite blade segments.
+See [its contracts](src/geometry/README.md),
+[the cutting validation](docs/CUTTING_VALIDATION.md), and
+[Agent 1's first geometry review](docs/GEOMETRY_REVIEW.md).
 
 Gameplay and simulation use high-level, strictly typed Maylang. Python is limited
 to development tooling. The graphical client uses Maylang's native UI adapter;
@@ -35,16 +36,20 @@ python3 tools/dev.py test
 python3 tools/dev.py run
 ```
 
-Launch the native movement lab:
+Launch the native cutting lab:
 
 ```sh
 python3 tools/dev.py run workshop
 ```
 
 Move with **A/D** or **Left/Right**, jump with **Space/W/Up**, pause with **P**,
-reset with **R**, and close with **Esc**. Normal play pauses when focus is lost.
-The training course currently uses static axis-aligned rectangle collisions;
-arbitrary cut fragments are not yet wired into the controller.
+aim with the **mouse**, cut with **J**, reset with **R**, and close with **Esc**.
+Normal play pauses when focus is lost. The blade reaches 3.5 m along the aim
+line; it must traverse a polygon to split it. Dark foundation blocks are
+protected. Cut pieces smaller than 0.025 square metres are rejected as a pair;
+the room allows at most 24 bodies. Cutting a supported slab detaches its cables.
+Cutting the last cable releases its body; cables currently provide static
+support rather than swinging constraints.
 
 The native target needs the host C compiler and X11/Xi/Xcursor/OpenGL development
 libraries. Interactive play needs X11/XWayland and OpenGL 4.3. A vendored,
@@ -57,13 +62,14 @@ Render and test without opening a window:
 
 ```sh
 python3 tools/dev.py run render-check
-python3 tools/dev.py run workshop -- --headless --demo --ticks 600 --snapshot build/workshop.png --report build/workshop.json
+python3 tools/dev.py run workshop -- --headless --cut-demo --ticks 600 --snapshot build/cutting.png --report build/cutting.json
 ```
 
-`--demo` follows a deterministic traversal. Without `--demo`, a headless run
+`--demo` follows a deterministic traversal; `--cut-demo` also cuts the overhead
+slab, then recovers from one fall and reaches the exit. Without either, a headless run
 leaves the player at spawn. Native autoplay can also run with `--ticks 600` and
 does not pause on focus loss. `--report` records the tick count, result, deaths,
-renderer, frame count, wall time and discarded catch-up time. Generated previews
+renderer, frame count, wall time, discarded catch-up time, cuts, body counts, requested ticks and stop reason. Generated previews
 stay in ignored `build/`; the default `run` target remains the original model
 smoke demonstration so CI does not need a display.
 

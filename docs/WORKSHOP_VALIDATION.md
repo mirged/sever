@@ -1,4 +1,7 @@
-# Movement lab validation — 2026-10-18
+# Historical movement lab validation — 2026-10-18
+
+Superseded by [the native cutting validation](CUTTING_VALIDATION.md). The
+results below describe the earlier movement-only milestone.
 
 The game model, controller, timing, projection, input handling and polygon fill
 are typed Maylang. The native target builds the pinned Maylang UI adapter;

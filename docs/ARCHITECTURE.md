@@ -7,9 +7,15 @@
 | `src/core/types.may` | Agent 1 | Vec2, Polygon, Body, Cable, World |
 | `src/core/math.may` | Agent 1 | Vector helpers, polygon area, rectangle construction |
 | `src/game/world.may` | Agent 1 | Initial room data |
-| `src/physics/step.may` | Agent 1 | Fixed-step free flight; contacts come later |
+| `src/physics/step.may` | Agent 1 | Original model free flight; workshop uses rigid.may |
 | `src/geometry/slice.may` | Agent 2 | Convex polygon validation and splitting |
-| `src/game/training.may` | Agent 1 | Kinematic movement, static rectangle contacts, reset/exit course |
+| `src/game/training.may` | Agent 1 | Kinematic convex movement, aim/cut binding, reset/exit course |
+| `src/geometry/mass.may` | Agent 2 | Polygon area, centroid, centroidal polar inertia, recentering |
+| `src/geometry/contact.may` | Agent 2 | SAT escape normal/depth and overlap-centroid point |
+| `src/physics/transforms.may` | Agent 1 | Body/world transforms and finite motion guards |
+| `src/physics/material.may` | Agent 1 | Material density |
+| `src/physics/rigid.may` | Agent 1 | Broad phase, rigid integration, impulses and convex character contacts |
+| `src/game/cutter.may` | Agent 1 | Fragment construction, ownership, velocity, budgets and cable release |
 | `src/game/timing.may` | Agent 1 | Fixed-step accumulator with bounded catch-up |
 | `src/render/` | Agent 1 | Camera projection and native UI draw commands |
 | `desktop.may` | Agent 1 | Native window, input, headless preview, report and lifecycle |
@@ -32,13 +38,26 @@ clears the backlog; normal play buffers a short jump press until the next tick.
 The wall clock can jump, so negative deltas are ignored. This is not a monotonic
 timing guarantee. Autoplay intentionally runs without keyboard focus.
 
-The original free-flight demonstration remains semi-implicit Euler. The movement
-lab is a separate kinematic controller: a 0.6-by-1.3 player, four substeps per
-fixed tick, horizontal/vertical swept boundary crossings against static,
-axis-aligned rectangles, ground/ceiling/side response, a fall reset and exit.
-These contact rules do not support rotated, dynamic, or arbitrary convex
-fragments. Do not feed cut pieces into this controller as bounding boxes; add
-convex contacts before integrating physical cuts.
+The original free-flight demonstration remains semi-implicit Euler. The workshop
+uses four 1/240-second substeps per fixed tick. Rigid bodies integrate their
+centre of mass, then resolve convex contacts through six positional/impulse
+passes with angular lever arms, low restitution and Coulomb friction. Cached
+world outlines and AABBs provide the broad phase. The upright 0.6-by-1.3
+kinematic character resolves against actual convex outlines in three passes;
+it receives surface velocity but does not push bodies back. Speed limits are
+20 m/s per linear component and 30 rad/s angular. This is a discrete prototype
+solver, with one representative contact point and no continuous collision
+detection, sleeping or full contact manifold. Thin/fast fragments and stacks
+remain limitations. Agent 2 is implementing an additive two-point manifold.
+
+Cuts transform the finite world blade into body-local coordinates and use
+Agent 2's splitting, mass and recentering modules. Density scales area and
+centroidal inertia. Each fresh fragment inherits the parent angle and spin,
+and its COM velocity includes the parent's angular velocity crossed with the
+COM offset. Fragment IDs are unique; failed sliver/budget checks retain the
+whole parent. The minimum piece area is 0.025 m² and body budget is 24. Only
+dynamic pieces outside x ±40 m or below y -12 m are retired. No polygon
+integral is duplicated in gameplay or physics.
 
 Rendering transforms local polygon vertices by angle and position, then fits the
 room into a clipped camera. Convex fill is high-level Maylang scan conversion;
@@ -48,9 +67,11 @@ draw convex pieces independently of the controller's current contact limits.
 
 `Body.dynamic` controls integration. `Body.cuttable` is independent: static
 terrain can be cut, while some dynamic objects may be protected by design.
-Materials are strings for now; a later material table will own density/toughness.
-Cables identify an attached body and use world-space anchors. An intact cable
-does not yet constrain physics; that work belongs to milestone 3.
+Materials are strings: steel density 7.8, wood 0.7 and default 2.4 in consistent
+prototype units. Cables identify a supported body and use world-space anchors.
+A suspended body stays static until its last cable is severed. Cutting the
+body detaches its cables and creates dynamic pieces. No rope swing or joint
+solver is claimed.
 
 ## Geometry API v1 (authorized for Agent 2)
 

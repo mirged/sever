@@ -1,44 +1,38 @@
 # Roadmap
 
-## 0 — Reproducible scaffold
+## 0 — Reproducible scaffold — complete
 
-- Typed model, fixed-step free-flight smoke demo, Maylang tests.
-- Pinned sibling toolchain and workspace-local artifacts.
-- Two-agent branches, JSON protocol, explicit ownership and executable checks.
+Typed Maylang model, pinned sibling compiler, workspace-local artifacts,
+two-agent branches and commit/push JSON communication.
 
-## 1 — The first cut (Agent 2)
+## 1 — Convex geometry — complete
 
-Completed as a pure geometry library and reviewed by Agent 1. Six combined
-Maylang suites pass, including 173 geometry checks, 49 evidence rows and 2012
-conservation splits. Gameplay binding and physical contacts remain in milestone 2.
+Finite-segment splitting, shared validation, area/centroid/inertia and SAT
+contacts. Agent 2 owns these kernels and their numerical tests. Agent 1 has
+independently reproduced analytic cases and deterministic fuzz results.
 
-Split a convex polygon using a finite blade segment. Produce two valid convex
-pieces only when the blade traverses the interior. Handle winding, tolerances,
-vertex hits, grazing, parallel edges and invalid shapes. Preserve area and
-prove it with deterministic tests. Keep geometry free of rendering and FFI.
+## 2 — The workshop — playable prototype
 
-## 2 — The workshop (Agent 1)
+Native rendering, movement, aiming and a finite blade; physical cut fragments;
+convex character and rigid-body contacts; cable release, pause/reset/exit;
+headless and native autoplay. Mass and linear/angular momentum are conserved
+when creating fragments. Foundations are protected. The course permits cutting
+but does not yet require constructing a bridge to solve it.
 
-Completed independently of the cutting kernel: native UI canvas, fitted room
-camera, bounded fixed-step accumulator, keyboard run/jump, pause/focus behavior,
-reset, static rectangle contacts, an exit, and headless/native autoplay previews.
-
-Native Maylang UI window, fixed-step accumulator, keyboard movement/jump,
-blade aiming, player/world collision, camera and reset. Integrate the geometry
-API, conserve mass and linear/angular momentum when making dynamic fragments,
-then add convex collision detection and resting contacts. First playable room:
-cut a suspended slab, form a bridge, cross a gap and reach an exit.
+Next: review Agent 2's additive two-point manifold, improve stacking, then
+build a room that requires a cut ramp or bridge. Discrete collisions and a
+kinematic character remain prototype limits.
 
 ## 3 — Physical consequences
 
-Severable cables and machine power, bounded debris lifetime/count, materials and
-blade feedback, fragment impacts, enemies sharing the same body/cutting model.
+Swinging cable constraints, machine power, material toughness, impact damage,
+enemies sharing the same body/cutting model, and debris used as weapons.
 
 ## 4 — Dismantle the boss
 
-Articulated, destructible machinery; detachable weapons and weak points; puzzle
-rooms that teach mechanics; checkpoints, audio and performance budgets.
+Articulated destructible machinery, detachable weapons and weak points,
+checkpoints, audio, puzzle progression and performance budgets.
 
-The first milestone deliberately uses convex geometry. Concave terrain needs
-decomposition and connectivity reconstruction. “Cut anything” is the direction;
-unsupported shapes must report a clear result, never silently corrupt the world.
+“Cut anything” is the direction. Current geometry is convex; concave terrain
+needs decomposition and connectivity reconstruction. Unsupported shapes must
+report a clear result rather than corrupt the world.
