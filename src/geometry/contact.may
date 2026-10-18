@@ -1,0 +1,150 @@
+import "../core/types.may";
+import "../core/math.may";
+import "numeric.may";
+
+/// Status is exactly "overlap", "separate" or "invalid". On overlap, `normal`
+/// is the unit direction A must move to escape B, `depth` the distance it must
+/// move, and `point` the area centroid of the overlap region. Otherwise the
+/// normal, depth and point are zero.
+pub struct ContactResult {
+    status: Str,
+    normal: Vec2,
+    depth: Float,
+    point: Vec2
+}
+
+fun no_contact(status: Str) -> ContactResult {
+    return ContactResult(status, Vec2(0.0, 0.0), 0.0, Vec2(0.0, 0.0));
+}
+
+/// 1.0 for counterclockwise outlines, -1.0 for clockwise ones.
+fun orientation(shape: Polygon) -> Float {
+    if (signed_area(shape) < 0.0) {
+        return -1.0;
+    }
+    return 1.0;
+}
+
+/// Unit outward normals of every edge, independent of winding.
+fun outward_normals(shape: Polygon) -> List<Vec2> {
+    let count: Int = len(shape.vertices);
+    let winding: Float = orientation(shape);
+    let normals: List<Vec2> = [];
+    for i: Int in 0..count {
+        let edge: Vec2 = subtract(shape.vertices[(i + 1) % count], shape.vertices[i]);
+        push(normals, scale(Vec2(edge.y, -edge.x), winding / vector_length(edge)));
+    }
+    return normals;
+}
+
+fun lowest(shape: Polygon, axis: Vec2) -> Float {
+    mut result: Float = dot(shape.vertices[0], axis);
+    for vertex: Vec2 in shape.vertices {
+        result = min(result, dot(vertex, axis));
+    }
+    return result;
+}
+
+fun highest(shape: Polygon, axis: Vec2) -> Float {
+    mut result: Float = dot(shape.vertices[0], axis);
+    for vertex: Vec2 in shape.vertices {
+        result = max(result, dot(vertex, axis));
+    }
+    return result;
+}
+
+/// Keep the part of `points` on the inner side of the line through `from` with
+/// outward unit normal `normal` (Sutherland-Hodgman, one plane).
+fun clip(points: List<Vec2>, from: Vec2, normal: Vec2) -> List<Vec2> {
+    let count: Int = len(points);
+    let kept: List<Vec2> = [];
+    for i: Int in 0..count {
+        let here: Vec2 = points[i];
+        let next: Vec2 = points[(i + 1) % count];
+        let here_out: Float = dot(subtract(here, from), normal);
+        let next_out: Float = dot(subtract(next, from), normal);
+        if (here_out <= 0.0) {
+            push(kept, here);
+        }
+        if ((here_out < 0.0 and next_out > 0.0) or (here_out > 0.0 and next_out < 0.0)) {
+            let t: Float = here_out / (here_out - next_out);
+            push(kept, add(here, scale(subtract(next, here), t)));
+        }
+    }
+    return kept;
+}
+
+/// Area centroid of a convex outline in either winding, falling back to the
+/// vertex mean when the area is too small to divide by.
+fun centre(points: List<Vec2>) -> Vec2 {
+    let count: Int = len(points);
+    let origin: Vec2 = points[0];
+    mut twice_area: Float = 0.0;
+    mut moment: Vec2 = Vec2(0.0, 0.0);
+    mut mean: Vec2 = Vec2(0.0, 0.0);
+    for i: Int in 0..count {
+        let a: Vec2 = subtract(points[i], origin);
+        let b: Vec2 = subtract(points[(i + 1) % count], origin);
+        let weight: Float = cross(a, b);
+        twice_area += weight;
+        moment = add(moment, scale(add(a, b), weight));
+        mean = add(mean, scale(a, 1.0 / float(count)));
+    }
+    if (abs(twice_area) > 0.0) {
+        return add(origin, scale(moment, 1.0 / (3.0 * twice_area)));
+    }
+    return add(origin, mean);
+}
+
+/// Separating-axis contact between two convex polygons in one world space.
+/// Every edge normal of both outlines is tested. On each axis, A escapes B by
+/// moving along +axis by (max B - min A) or along -axis by (max A - min B);
+/// the smaller of the two is the axis overlap, which stays correct when one
+/// outline contains the other. Overlap of epsilon or less on any axis,
+/// including touching, is "separate". Axis ties keep the first candidate,
+/// A's edges before B's. Inputs must pass the split_convex validation rule.
+pub fun contact_convex(a: Polygon, b: Polygon, epsilon: Float) -> ContactResult {
+    if (not (finite_coordinate(epsilon) and epsilon > 0.0)) {
+        return no_contact("invalid");
+    }
+    if (not (valid_convex(a, epsilon) and valid_convex(b, epsilon))) {
+        return no_contact("invalid");
+    }
+    let axes: List<Vec2> = outward_normals(a);
+    for normal: Vec2 in outward_normals(b) {
+        push(axes, normal);
+    }
+    mut best_depth: Float = -1.0;
+    mut best_normal: Vec2 = Vec2(0.0, 0.0);
+    for axis: Vec2 in axes {
+        let forward: Float = highest(b, axis) - lowest(a, axis);
+        let backward: Float = highest(a, axis) - lowest(b, axis);
+        mut depth: Float = forward;
+        mut direction: Vec2 = axis;
+        if (backward < forward) {
+            depth = backward;
+            direction = scale(axis, -1.0);
+        }
+        if (not (depth > epsilon)) {
+            return no_contact("separate");
+        }
+        if (best_depth < 0.0 or depth < best_depth) {
+            best_depth = depth;
+            best_normal = direction;
+        }
+    }
+
+    mut region: List<Vec2> = [];
+    for vertex: Vec2 in a.vertices {
+        push(region, vertex);
+    }
+    let count: Int = len(b.vertices);
+    let b_normals: List<Vec2> = outward_normals(b);
+    for i: Int in 0..count {
+        region = clip(region, b.vertices[i], b_normals[i]);
+    }
+    if (len(region) == 0) {
+        return no_contact("separate");
+    }
+    return ContactResult("overlap", best_normal, best_depth, centre(region));
+}

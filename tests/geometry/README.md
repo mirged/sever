@@ -26,3 +26,8 @@ this directory through the `may.json` test target.
   `1e6`. It checks that cuts conserve area, centroid and parallel-axis inertia,
   covering 39 cuts including a 36-blade sweep. It also checks that `recentred`
   returns fresh vertices, and that each failure reports its exact reason.
+- `contact.test.may` checks exact normals, depths and contact points for
+  face/face, vertex/face, trapezoid, rotated, contained, containing and deep
+  overlaps. It also covers touching, gaps, epsilon-scale penetration, a
+  bounding-box false positive, every winding pair, swapped operands, invalid
+  input and immutability.

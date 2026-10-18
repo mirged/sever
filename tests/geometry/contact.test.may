@@ -1,0 +1,181 @@
+import "../../src/core/types.may";
+import "../../src/core/math.may";
+import "../../src/geometry/contact.may";
+
+let EPSILON: Float = 0.000001;
+let EXACT: Float = 0.000000000001;
+mut checks: Int = 0;
+
+fun expect(value: Bool, label: Str) -> Nil {
+    if (not value) {
+        fail("FAIL: " + label);
+    }
+    checks += 1;
+    return;
+}
+
+fun near(actual: Float, expected: Float, tolerance: Float) -> Bool {
+    let difference: Float = actual - expected;
+    return difference >= -tolerance and difference <= tolerance;
+}
+
+fun box(x0: Float, y0: Float, x1: Float, y1: Float) -> Polygon {
+    return Polygon([Vec2(x0, y0), Vec2(x1, y0), Vec2(x1, y1), Vec2(x0, y1)]);
+}
+
+fun reversed(shape: Polygon) -> Polygon {
+    let points: List<Vec2> = [];
+    mut i: Int = len(shape.vertices) - 1;
+    while (i >= 0) {
+        push(points, shape.vertices[i]);
+        i -= 1;
+    }
+    return Polygon(points);
+}
+
+fun rotated(shape: Polygon, c: Float, s: Float) -> Polygon {
+    let points: List<Vec2> = [];
+    for v: Vec2 in shape.vertices {
+        push(points, Vec2(c * v.x - s * v.y, s * v.x + c * v.y));
+    }
+    return Polygon(points);
+}
+
+/// Exact overlap: status, unit normal, depth and contact point.
+fun expect_overlap(result: ContactResult, nx: Float, ny: Float, depth: Float, px: Float, py: Float,
+    label: Str) -> Nil {
+    print(label + " | " + result.status + " | normal " + str(result.normal.x) + ", " + str(result.normal.y)
+        + " | depth " + str(result.depth) + " | point " + str(result.point.x) + ", " + str(result.point.y));
+    expect(result.status == "overlap", label + ": overlap");
+    expect(near(result.normal.x, nx, EXACT) and near(result.normal.y, ny, EXACT), label + ": normal");
+    expect(near(dot(result.normal, result.normal), 1.0, EXACT), label + ": unit normal");
+    expect(near(result.depth, depth, EXACT), label + ": depth");
+    expect(near(result.point.x, px, EXACT) and near(result.point.y, py, EXACT), label + ": point");
+    return;
+}
+
+fun expect_none(result: ContactResult, status: Str, label: Str) -> Nil {
+    expect(result.status == status, label + ": " + status + ", got " + result.status);
+    expect(result.normal.x == 0.0 and result.normal.y == 0.0 and result.depth == 0.0
+        and result.point.x == 0.0 and result.point.y == 0.0, label + ": zero fields");
+    return;
+}
+
+/// Swapping operands negates the normal and keeps depth and point.
+fun expect_swapped(a: Polygon, b: Polygon, label: Str) -> Nil {
+    let forward: ContactResult = contact_convex(a, b, EPSILON);
+    let backward: ContactResult = contact_convex(b, a, EPSILON);
+    expect(backward.status == forward.status, label + ": swapped status");
+    expect(near(backward.normal.x, -forward.normal.x, EXACT) and near(backward.normal.y, -forward.normal.y, EXACT),
+        label + ": swapped normal is negated");
+    expect(near(backward.depth, forward.depth, EXACT), label + ": swapped depth");
+    expect(near(backward.point.x, forward.point.x, EXACT) and near(backward.point.y, forward.point.y, EXACT),
+        label + ": swapped point");
+    return;
+}
+
+/// Every winding combination gives the same contact.
+fun expect_windings(a: Polygon, b: Polygon, label: Str) -> Nil {
+    let base: ContactResult = contact_convex(a, b, EPSILON);
+    let variants: List<ContactResult> = [contact_convex(reversed(a), b, EPSILON),
+        contact_convex(a, reversed(b), EPSILON), contact_convex(reversed(a), reversed(b), EPSILON)];
+    for other: ContactResult in variants {
+        expect(other.status == base.status and near(other.depth, base.depth, EXACT)
+            and near(other.normal.x, base.normal.x, EXACT) and near(other.normal.y, base.normal.y, EXACT)
+            and near(other.point.x, base.point.x, EXACT) and near(other.point.y, base.point.y, EXACT),
+            label + ": winding independent");
+    }
+    return;
+}
+
+let a: Polygon = box(0.0, 0.0, 2.0, 2.0);
+
+// Face/face: B overlaps A's right face by 0.5; the overlap region is
+// [1.5, 2] x [0.5, 1.5], so A escapes left by 0.5 and the point is (1.75, 1).
+let side: Polygon = box(1.5, 0.5, 3.5, 1.5);
+expect_overlap(contact_convex(a, side, EPSILON), -1.0, 0.0, 0.5, 1.75, 1.0, "face/face");
+expect_swapped(a, side, "face/face");
+expect_windings(a, side, "face/face");
+
+// Vertex/face: a diamond's lowest vertex (1, 1.8) dips 0.2 below A's top face.
+// The overlap is the triangle (1, 1.8), (1.2, 2), (0.8, 2) with centroid (1, 1.9333...).
+let diamond: Polygon = Polygon([Vec2(1.0, 1.8), Vec2(2.0, 2.8), Vec2(1.0, 3.8), Vec2(0.0, 2.8)]);
+expect_overlap(contact_convex(a, diamond, EPSILON), 0.0, -1.0, 0.2, 1.0, 5.8 / 3.0, "vertex/face");
+expect_swapped(a, diamond, "vertex/face");
+expect_windings(a, diamond, "vertex/face");
+
+// A trapezoid overlap separates the area centroid from the vertex mean: B's
+// part below y = 2 has widths 1 and 19/15 over height 0.5, so the centroid
+// sits at y = 1.5 + 53/204, while the vertex mean would be 1.75.
+let trapezoid: Polygon = Polygon([Vec2(0.5, 1.5), Vec2(1.5, 1.5), Vec2(1.9, 3.0), Vec2(0.1, 3.0)]);
+expect_overlap(contact_convex(a, trapezoid, EPSILON), 0.0, -1.0, 0.5, 1.0, 1.5 + 53.0 / 204.0,
+    "trapezoid overlap point is the area centroid");
+expect_swapped(a, trapezoid, "trapezoid");
+
+// Rotating the whole face/face fixture by 30 degrees rotates normal and point
+// and keeps the depth.
+let c: Float = sqrt(3.0) / 2.0;
+let s: Float = 0.5;
+let turned: ContactResult = contact_convex(rotated(a, c, s), rotated(side, c, s), EPSILON);
+expect_overlap(turned, -c, -s, 0.5, c * 1.75 - s * 1.0, s * 1.75 + c * 1.0, "rotated face/face");
+expect_swapped(rotated(a, c, s), rotated(side, c, s), "rotated face/face");
+
+// Containment: A = [0.5, 1] x [0.25, 0.75] lies wholly inside [0, 4]^2. Its
+// shortest escape is down by 0.75. The naive interval formula would report
+// 0.5, the width of A itself.
+let small: Polygon = box(0.5, 0.25, 1.0, 0.75);
+let big: Polygon = box(0.0, 0.0, 4.0, 4.0);
+expect_overlap(contact_convex(small, big, EPSILON), 0.0, -1.0, 0.75, 0.75, 0.5, "contained A");
+expect_overlap(contact_convex(big, small, EPSILON), 0.0, 1.0, 0.75, 0.75, 0.5, "containing A");
+expect_windings(small, big, "containment");
+
+// Deep overlap that is not containment: escape the short way.
+expect_overlap(contact_convex(a, box(0.5, -1.0, 1.5, 0.9), EPSILON), 0.0, 1.0, 0.9, 1.0, 0.45, "deep overlap");
+
+// Touching, gaps and epsilon-scale penetration.
+expect_none(contact_convex(a, box(2.0, 0.0, 4.0, 2.0), EPSILON), "separate", "shared edge touches");
+expect_none(contact_convex(a, box(2.0, 2.0, 3.0, 3.0), EPSILON), "separate", "shared corner touches");
+expect_none(contact_convex(a, box(2.0000001, 0.0, 4.0, 2.0), EPSILON), "separate", "tiny gap");
+expect_none(contact_convex(a, box(5.0, 5.0, 6.0, 6.0), EPSILON), "separate", "far apart");
+expect_none(contact_convex(a, box(2.0 - 0.0000009, 0.5, 4.0, 1.5), EPSILON), "separate",
+    "0.9e-6 penetration is within epsilon");
+let shallow: ContactResult = contact_convex(a, box(2.0 - 0.0000011, 0.5, 4.0, 1.5), EPSILON);
+expect(shallow.status == "overlap" and near(shallow.depth, 0.0000011, 0.000000000001)
+    and shallow.normal.x == -1.0 and shallow.normal.y == 0.0, "1.1e-6 penetration overlaps with exact depth");
+// Separated diagonally although both axis-aligned bounding boxes overlap.
+let leaning: Polygon = Polygon([Vec2(2.5, 1.0), Vec2(3.0, 3.0), Vec2(1.0, 3.0)]);
+expect_none(contact_convex(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(0.0, 2.0)]), leaning, EPSILON),
+    "separate", "bounding boxes overlap, shapes do not");
+
+// Invalid input uses the split_convex validation and range policy.
+let huge: Float = 1.0e300;
+let infinity: Float = huge * huge;
+let not_a_number: Float = infinity - infinity;
+expect_none(contact_convex(a, side, 0.0), "invalid", "zero epsilon");
+expect_none(contact_convex(a, side, not_a_number), "invalid", "NaN epsilon");
+expect_none(contact_convex(Polygon([Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(1.0, 0.5), Vec2(2.0, 2.0),
+    Vec2(0.0, 2.0)]), side, EPSILON), "invalid", "concave A");
+expect_none(contact_convex(a, Polygon([Vec2(0.0, 0.0), Vec2(0.0, 0.0), Vec2(2.0, 0.0), Vec2(2.0, 2.0)]),
+    EPSILON), "invalid", "duplicate vertex in B");
+expect_none(contact_convex(Polygon([Vec2(0.0, 0.0), Vec2(not_a_number, 0.0), Vec2(0.0, 2.0)]), side, EPSILON),
+    "invalid", "NaN vertex");
+expect_none(contact_convex(a, Polygon([Vec2(0.0, 0.0), Vec2(infinity, 0.0), Vec2(0.0, 2.0)]), EPSILON),
+    "invalid", "infinite vertex");
+expect_none(contact_convex(a, Polygon([Vec2(0.0, 0.0), Vec2(1.0, 0.0)]), EPSILON), "invalid", "two vertices");
+
+// Immutability: inputs keep their vertices; the result owns its vectors.
+let probe_a: Polygon = box(0.0, 0.0, 2.0, 2.0);
+let probe_b: Polygon = box(1.5, 0.5, 3.5, 1.5);
+let owned: ContactResult = contact_convex(probe_a, probe_b, EPSILON);
+owned.normal.x = 42.0;
+owned.point.y = 42.0;
+let again: ContactResult = contact_convex(probe_a, probe_b, EPSILON);
+expect(again.normal.x == -1.0 and near(again.point.y, 1.0, EXACT), "result vectors are fresh");
+let expected: Polygon = box(0.0, 0.0, 2.0, 2.0);
+for i: Int in 0..4 {
+    expect(probe_a.vertices[i].x == expected.vertices[i].x and probe_a.vertices[i].y == expected.vertices[i].y,
+        "A untouched");
+}
+expect(probe_b.vertices[0].x == 1.5 and probe_b.vertices[2].y == 1.5 and len(probe_b.vertices) == 4, "B untouched");
+
+print("PASS: " + str(checks) + " contact checks");

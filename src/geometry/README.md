@@ -11,8 +11,9 @@ pub fun split_convex(shape: Polygon, start: Vec2, end: Vec2, epsilon: Float) -> 
 It is pure, typed Maylang: no mutation of inputs, I/O, randomness, physics or
 native calls. Tests are in [`tests/geometry/`](../../tests/geometry/README.md).
 `numeric.may` holds the shared finite-coordinate guard (`MAX_COORDINATE`,
-`finite_coordinate`, `finite_point`, `vector_length`), so every geometry module
-applies one range policy.
+`finite_coordinate`, `finite_point`, `vector_length`) and the strict-convexity
+rule `valid_convex(shape, epsilon)`. Every geometry module applies one range
+and validation policy.
 
 ## Results
 
@@ -120,3 +121,35 @@ pub fun recentred(shape: Polygon, origin: Vec2) -> Polygon
   theorem) inertia about the parent centroid. Tests require a relative error of
   `1e-9` or better; observed errors are about `1e-16` near the origin and about
   `7e-12` at `1e6`.
+
+## Contacts
+
+`contact.may` implements contacts-v1:
+
+```may
+pub struct ContactResult { status: Str, normal: Vec2, depth: Float, point: Vec2 }
+pub fun contact_convex(a: Polygon, b: Polygon, epsilon: Float) -> ContactResult
+```
+
+- **Status** is `overlap`, `separate` or `invalid`. `separate` and `invalid`
+  return a zero normal, depth and point.
+- **Validation** is the same as `split_convex`: both outlines must pass
+  `valid_convex` with the same `epsilon`, and the same finite-coordinate
+  policy applies. Either winding works.
+- **Separating axes:** the axes are the unit outward edge normals of both
+  outlines. On each axis, A can escape along `+axis` by `max(B) − min(A)` or
+  along `−axis` by `max(A) − min(B)`. The smaller distance is that axis's
+  overlap, which stays correct under containment; the naive
+  `min(max) − max(min)` interval would report the inner shape's width
+  instead. `normal` is the escape direction for A, and `depth` is the
+  smallest axis overlap. An overlap of `epsilon` or less on any axis
+  (touching, or a gap) is `separate`.
+- **Ties** keep the first minimal axis, A's edges before B's. Swapping
+  operands therefore negates the normal exactly, except when two axes tie,
+  for example a square centred inside a square.
+- **Contact point:** the area centroid of A clipped by B's edge half-planes.
+  It lies inside the overlap and is exact for the overlap region. For the
+  first solver this is an approximation: it is one point, not a contact
+  manifold. Resting stacks will want two clipped feature points later.
+- **Cost** is O((n + m)²) with validation, and O((n + m)·m) for clipping. It is
+  intended for small game outlines.
