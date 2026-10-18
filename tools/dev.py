@@ -77,6 +77,7 @@ def main():
         raise ValueError("Toolchain not bootstrapped; run python3 tools/dev.py bootstrap")
     if action == "check":
         run([sys.executable, ROOT / "tools/mailbox.py", "validate"])
+        run([sys.executable, "-m", "unittest", "discover", "-s", "tests/tooling", "-v"])
         run([RUNNER, "check", "--all", *sys.argv[2:]])
     else:
         run([RUNNER, action, *sys.argv[2:]])

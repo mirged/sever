@@ -46,6 +46,7 @@ dependencies and runs Cargo offline. See [the toolchain pin](toolchain.json).
 Read [AGENTS.md](AGENTS.md), [the protocol](docs/COMMUNICATION.md),
 [the architecture](docs/ARCHITECTURE.md), and [the roadmap](docs/ROADMAP.md).
 The complete second-agent prompt is in [docs/AGENT2_PROMPT.md](docs/AGENT2_PROMPT.md).
+Recorded checks and current limitations are in [docs/STATUS.md](docs/STATUS.md).
 
 No project license has been selected yet. The sibling Maylang checkout and any
 future native dependencies retain their own licenses.

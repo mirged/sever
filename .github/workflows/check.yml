@@ -1,0 +1,35 @@
+name: scaffold checks
+
+on:
+  push:
+    branches: [main, agent1, agent2]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: sever
+      - uses: actions/checkout@v4
+        with:
+          repository: mirged/maylang
+          ref: beb593cdcffb2ff4c30db060686c3eb312807d62
+          path: maylang
+      - name: Bootstrap source compiler and runner
+        working-directory: sever
+        run: python3 tools/dev.py bootstrap
+      - name: Check protocol and Maylang types
+        working-directory: sever
+        run: python3 tools/dev.py check
+      - name: Test model
+        working-directory: sever
+        run: python3 tools/dev.py test
+      - name: Run smoke demonstration
+        working-directory: sever
+        run: python3 tools/dev.py run

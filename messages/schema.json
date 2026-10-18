@@ -20,7 +20,7 @@
                 "properties": {
                     "id": {"type": "string", "pattern": "^agent[12]-[0-9]{4,}$"},
                     "sequence": {"type": "integer", "minimum": 1},
-                    "sent_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+                    "sent_at": {"type": "string", "format": "date-time", "pattern": "T.*Z$"},
                     "kind": {"enum": ["request", "accept", "proposal", "progress", "blocked", "handoff", "review", "done"]},
                     "task": {"type": "string", "minLength": 1},
                     "in_reply_to": {"type": ["string", "null"], "pattern": "^agent[12]-[0-9]{4,}$"},

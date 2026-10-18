@@ -44,7 +44,9 @@ def validate_schema(value, schema, path="mailbox"):
         ):
             raise ValueError(f"{path}: invalid string")
         if schema.get("format") == "date-time":
-            datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                raise ValueError(f"{path}: timestamp requires a UTC offset")
     elif type(value) is int and value < schema.get("minimum", value):
         raise ValueError(f"{path}: below minimum")
 
