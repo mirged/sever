@@ -4,6 +4,7 @@ import "src/game/training.may";
 import "src/game/timing.may";
 import "src/render/canvas.may" as canvas;
 import "src/render/projection.may" as projection;
+import "src/render/pacing.may" as pacing;
 
 fun run_workshop() -> Nil {
     let argv: List<Str> = args();
@@ -41,6 +42,8 @@ fun run_workshop() -> Nil {
     print("Renderer:", ui.renderer(window));
     let started: Float = float(clock());
     mut rendered_frames: Int = 0;
+    mut event_polls: Int = 0;
+    mut stop_reason: Str = "window_closed";
     mut training: Training = create_training();
     mut timer: StepClock = create_clock();
     mut paused: Bool = false;
@@ -52,14 +55,19 @@ fun run_workshop() -> Nil {
             }
             canvas.draw_scene(window, training, false);
             rendered_frames = 1;
+            stop_reason = "tick_limit";
         } else {
             mut previous: Float = float(clock());
             mut jump_queued: Bool = false;
             mut running: Bool = true;
             mut next_report: Int = 60;
+            let pacer: pacing.FramePacer = pacing.create_pacer();
             while (running) {
-                let event: ui.Event = ui.poll_for(window, 8);
-                if (event.kind == "close" or ui.key_pressed(window, 256)) { break; }
+                let event: ui.Event = ui.poll_for(window,
+                    pacing.frame_wait_ms(pacer, float(clock())));
+                event_polls += 1;
+                if (event.kind == "close") { break; }
+                if (ui.key_pressed(window, 256)) { stop_reason = "escape"; break; }
                 let focused: Bool = demo or ui.focused(window);
                 let reset: Bool = ui.key_pressed(window, 82);
                 let toggle_pause: Bool = ui.key_pressed(window, 80);
@@ -90,18 +98,25 @@ fun run_workshop() -> Nil {
                 if (ui.key_down(window, 65) or ui.key_down(window, 263)) { direction -= 1; }
                 if (ui.key_down(window, 68) or ui.key_down(window, 262)) { direction += 1; }
                 for tick: Int in 0..ticks {
+                    if (limit > 0 and training.world.tick >= limit) { break; }
                     if (cut_demo) { demo_cut(training); }
                     step_training(training, if (demo) { demo_controls(training) }
                         else { Controls(direction, jump_queued) });
                     jump_queued = false;
                 }
-                canvas.draw_scene(window, training, paused or not focused);
-                rendered_frames += 1;
+                let draw_due: Bool = pacing.frame_due(pacer, float(clock()));
+                if (draw_due or (limit > 0 and training.world.tick >= limit)) {
+                    canvas.draw_scene(window, training, paused or not focused);
+                    rendered_frames += 1;
+                }
                 if (limit > 0 and training.world.tick >= next_report) {
                     print("Workshop tick:", training.world.tick);
                     next_report += 60;
                 }
-                if (limit > 0 and training.world.tick >= limit) { running = false; }
+                if (limit > 0 and training.world.tick >= limit) {
+                    stop_reason = "tick_limit";
+                    running = false;
+                }
             }
         }
         if (snapshot != "") { ui.snapshot(window, snapshot); }
@@ -111,10 +126,13 @@ fun run_workshop() -> Nil {
                 if (body.dynamic) { dynamic_bodies += 1; }
             }
             write_file(report, json_stringify({"ticks": training.world.tick,
+                "requested_ticks": limit, "stop_reason": stop_reason,
                 "finished": training.player.finished, "deaths": training.player.deaths,
                 "x": training.player.position.x, "y": training.player.position.y,
                 "renderer": ui.renderer(window), "dropped_seconds": timer.dropped_seconds,
-                "frames": rendered_frames, "wall_seconds": float(clock()) - started,
+                "frames": rendered_frames, "event_polls": event_polls,
+                "render_limit_hz": if (headless) { 0 } else { 60 },
+                "wall_seconds": float(clock()) - started,
                 "cuts": training.cutter.cuts, "cables_cut": training.cutter.cables,
                 "cut_status": training.cutter.status, "bodies": len(training.world.bodies),
                 "dynamic_bodies": dynamic_bodies}) + "\n");
